@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-obvpm"
-description = "Everyday workflow nodes: an interactive Load Image & Crop, Load Images & Compose (several crops packed into one reference image), megapixel downscaling, optional gates, lazy switches, bundles, Value Presets, fallback values, and the beta57 scheduler. Companion to comfyui-obvpm-timeline."
+description = "Bundle multiple wires into one wire. Create customizable Presets nodes. Compose ref images in one node. ComfyUI nodes to save time and keep your workflows tidy."
 version = "0.1.0"
 license = { file = "LICENSE" }
 readme = "README.md"
