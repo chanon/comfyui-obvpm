@@ -2,6 +2,8 @@
 
 ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires into one wire. Create customizable presets nodes.
 
+NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
+
 ## YouTube Intro Videos
 
 To quickly see what these nodes are useful for, you can check out these YouTube videos that I made to introduce them
