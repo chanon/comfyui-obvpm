@@ -1,16 +1,19 @@
 # comfyui-obvpm
 
-ComfyUI nodes to save time and keep your workflows tidy.
+ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires into one wire. Create customizable presets nodes.
 
-## Highlights
+## YouTube Intro Videos
 
-**Load Images & Compose**: Load multiple images, interactively crop them, and automatically compose them into a single reference image all in one node.
+To quickly see what these nodes are useful for, you can check out these YouTube videos that I made to introduce them
 
-**Value Presets**: Create presets with customizable fields to easily switch between frequently used settings.
+- [Load Images & Compose](https://www.youtube.com/watch?v=xjSflq85DqI) - Lets you compose ref images in a single node
+- [Bundle Wires](https://www.youtube.com/watch?v=_j9aaXAmIzQ) - Lets you bundle multiple wires into a single wire
+- [Value Presets Node](https://www.youtube.com/watch?v=gRt_NdzFjTw) - Lets you creat customizable presets for any workflow
+- [Creating a Clean R2V Workflow with Customizable Presets](https://www.youtube.com/watch?v=4-TVn0TscmM) (the resulting workflow is [here](workflows/h3_obvpm_r2v.json))
 
-**Bundles**: Bundle multiple wires into a single wire, then Unbundle them by name.
+## Follow me for Updates
 
-All nodes (should) work in both Classic and Nodes 2.0 and (should) look good with all color themes.
+I'm working on more nodes and workflows, so follow me on X at https://x.com/chanons
 
 ## Installation
 
@@ -25,7 +28,7 @@ Restart ComfyUI. No extra Python dependencies are required.
 
 Every node in this pack is listed with **(obvpm)** after its name, so searching the node menu for `obvpm` finds all of them. The names used throughout this document leave that suffix off.
 
-## Node in this pack
+## Nodes in this pack
 
 **[Image nodes](#image-nodes-obvpmimage)** — obvpm/image
 
@@ -199,8 +202,6 @@ A bundle is a plain name/value mapping, so anything can go in it, including imag
 There is one node per end. Both work the names out from the wires — there is nothing to keep in step — and both carry a **config dialog** (the ⚙ on the node, right-click → Configure…, or double-click) for renaming and reordering on the packing side, reordering and hiding on the unpacking side. In both dialogs, **reordering moves the wires with their fields** — a wire that carried `mask` still carries `mask` wherever its pin lands.
 
 Both nodes also **collapse**: the − button left of the ⚙ folds the node to a single short bar, its wires gathered at each end, like any collapsed node. Expand with the usual control (the dot at the bar's left on the canvas, the chevron in Nodes 2.0) or by double-clicking the bar; right-click → Collapse and Alt+C work as well. The state saves with the workflow.
-
-
 
 ### Bundle
 
@@ -382,35 +383,6 @@ Everything unloaded is reloaded on next use, so the cost is that reload time; pl
 This pack automatically adds **beta57** for you if you don't have or don't want to install [RES4LYF](https://github.com/ClownsharkBatwing/RES4LYF).
 
 beta57 is the beta sigma schedule with `alpha=0.5, beta=0.7`, popularized by RES4LYF. It appears in every scheduler dropdown (KSampler, BasicScheduler, [Scheduler Name](#scheduler-name), …) and behaves like a built-in.
-
-## Safety limits
-
-Workflows are data that arrives from elsewhere, so the two image loaders
-resolve their own paths: a file must be a regular file inside the input,
-output or temp folder (the ` [input]` / ` [output]` / ` [temp]` suffixes
-pick which), and `..`, UNC paths, alternate data streams and links that
-lead outside are refused. Load, validation, hashing and the Compose
-preview all use the same check.
-
-| Resource | Limit |
-|---|---|
-| Compose layers / layer JSON | 64 / 256 KiB |
-| Crop JSON | 4 KiB, finite coordinates in 0..1 |
-| Image file / files per operation | 64 MiB / 256 MiB |
-| One frame | 32 Mi-pixels, no side over 16384 |
-| Decoded pixels per operation | 64 Mi-pixels across all layers or frames |
-| Load Image & Crop animation | 128 frames |
-| Compose output canvas | 32 Mi-pixels, no side over 16384, whatever `max_megapixels` says |
-| Numeric inputs | finite; megapixels 0..128, gap 0..256, aspect within 1:16384..16384:1 |
-
-GIF, PNG/APNG and WebP headers are read before Pillow opens the file, so
-an oversized canvas or frame is refused before anything is allocated.
-Every other format Pillow can open is accepted, as with the stock Load
-Image; its pixels are checked as soon as it is open. Hashing reads in
-1 MiB chunks. Uploads from the editor are checked before sending.
-
-Offline checks: `python -m unittest discover -s tests -v` and
-`node --experimental-vm-modules --test tests/test_web_security.mjs`.
 
 ## License
 
