@@ -1,0 +1,12 @@
+# Everything git detects as text is stored AND checked out with LF, on
+# every platform, regardless of core.autocrlf. Binaries are listed so
+# detection never guesses wrong on them.
+* text=auto eol=lf
+
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.safetensors binary

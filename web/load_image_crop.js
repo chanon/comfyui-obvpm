@@ -1,4 +1,9 @@
 import { app } from "../../scripts/app.js";
+// One implementation of the fixed-aspect geometry, shared with the
+// compose editor -- two editors disagreeing about the same stored crop
+// is the bug this import prevents.
+import { parseAspect, impliedAspectRect, ratioDragRect,
+         snapRectToAspect } from "./obvpm_crop.js";
 import { api } from "../../scripts/api.js";
 
 const MARGIN = 10; // node-space px, matches litegraph widget margin
@@ -50,6 +55,26 @@ app.registerExtension({
             cropWidget.hidden = true;
             cropWidget.options = cropWidget.options || {};
             cropWidget.options.hidden = true;
+            // A hidden widget keeps its input SOCKET: invisible, still
+            // hit-tested, and sitting over the node's real first pin. The
+            // value travels in widgets_values, so the socket is dead
+            // weight -- drop it (unless something is actually wired to
+            // it) and re-point the links, which address slots by INDEX.
+            const cropSlot = (node.inputs ?? []).findIndex(
+                (s) => s.widget && (s.widget.name === "crop"
+                                    || s.name === "crop"));
+            if (cropSlot >= 0 && node.inputs[cropSlot].link == null) {
+                node.removeInput(cropSlot);
+                // graph.links is an object at the root but a Map inside a
+                // subgraph, so it cannot simply be bracket-indexed.
+                const links = node.graph?.links;
+                (node.inputs ?? []).forEach((slot, index) => {
+                    if (!links || slot.link == null) return;
+                    const link = typeof links.get === "function"
+                        ? links.get(slot.link) : links[slot.link];
+                    if (link) link.target_slot = index;
+                });
+            }
 
             const isVueMode = () =>
                 typeof LiteGraph !== "undefined" && !!LiteGraph.vueNodesMode;
@@ -66,6 +91,16 @@ app.registerExtension({
                 get: () => undefined,
                 set: () => {},
             });
+            // The stock mask editor is offered to "image nodes": ones with
+            // `imgs` (swallowed above) OR this flag. With the flag, the
+            // right-click entry "Open in MaskEditor" appears natively and
+            // the editor reads the file to paint from `node.images`,
+            // which loadImage keeps pointed at the current file. Its save
+            // uploads the painted copy under input/clipspace, writes the
+            // new name into the `image` widget WITHOUT a callback, and
+            // hands the result to the stock preview -- draw() notices the
+            // widget change and reloads, which also wipes that preview.
+            node.previewMediaType = "image";
 
             const state = {
                 img: null,
@@ -107,11 +142,10 @@ app.registerExtension({
                 return Math.round(width * (state.img.height / state.img.width));
             }
 
-            function cropDims() {
+            function cropDims(r = state.rect) {
                 // Mirror the backend's _parse_crop rounding.
                 const iw = state.img.width;
                 const ih = state.img.height;
-                const r = state.rect;
                 const x0 = Math.max(0, Math.min(iw - 1, Math.round(r.x * iw)));
                 const y0 = Math.max(0, Math.min(ih - 1, Math.round(r.y * ih)));
                 const x1 = Math.max(x0 + 1, Math.min(iw, Math.round((r.x + r.w) * iw)));
@@ -130,6 +164,20 @@ app.registerExtension({
                 const s = Math.sqrt(target / (w * h));
                 return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
             }
+
+            // The pinned aspect as a PIXEL ratio, or null for free.
+            // The preview box is aspect-correct, so the same number
+            // constrains screen-space drags directly.
+            function aspectRatio() {
+                const w = node.widgets.find((x) => x.name === "aspect");
+                return parseAspect(w?.value);
+            }
+
+            const impliedRect = (ratio) =>
+                impliedAspectRect(state.img.width, state.img.height, ratio);
+
+            const ratioRect = (ax, ay, px, py, ratio) =>
+                ratioDragRect(state.box, ax, ay, px, py, ratio, MIN_SEL);
 
             function hitTest(px, py) {
                 if (!state.rect || !state.box) return { mode: "new" };
@@ -210,6 +258,14 @@ app.registerExtension({
                     const w = effWidth - MARGIN * 2;
                     const imgAreaH = Math.max(1, h - u.row);
 
+                    // The mask editor (and clipspace paste) assign the
+                    // widget's value directly, with no callback. The crop
+                    // is kept: the painted copy has the source's size.
+                    if (imageWidget.value !== state.loadedValue) {
+                        dbg("image changed under the editor:", imageWidget.value);
+                        loadImage();
+                    }
+
                     ctx.save();
 
                     if (!state.img) {
@@ -232,11 +288,14 @@ app.registerExtension({
                     state.box = { bx, by, bw, bh };
                     ctx.drawImage(state.img, bx, by, bw, bh);
 
-                    if (state.rect && !lowQuality) {
-                        const sx = bx + state.rect.x * bw;
-                        const sy = by + state.rect.y * bh;
-                        const sw = state.rect.w * bw;
-                        const sh = state.rect.h * bh;
+                    const ratioDraw = aspectRatio();
+                    const shown = state.rect
+                        || (ratioDraw ? impliedRect(ratioDraw) : null);
+                    if (shown && !lowQuality) {
+                        const sx = bx + shown.x * bw;
+                        const sy = by + shown.y * bh;
+                        const sw = shown.w * bw;
+                        const sh = shown.h * bh;
 
                         // Dim everything outside the selection.
                         ctx.beginPath();
@@ -247,7 +306,9 @@ app.registerExtension({
 
                         ctx.strokeStyle = "#4af";
                         ctx.lineWidth = 1;
+                        if (!state.rect) ctx.setLineDash([4, 3]);
                         ctx.strokeRect(sx, sy, sw, sh);
+                        ctx.setLineDash([]);
                         ctx.fillStyle = "#4af";
                         for (const [hx, hy] of [
                             [sx, sy], [sx + sw, sy], [sx, sy + sh], [sx + sw, sy + sh],
@@ -278,7 +339,7 @@ app.registerExtension({
                                 cx += widths[i];
                             }
                         };
-                        const [pw, ph] = cropDims();
+                        const [pw, ph] = cropDims(shown);
                         drawPill(
                             [[`${pw} x ${ph}`, "#fff"]],
                             sy > y + pillH + 2 ? sy - 3 : sy + pillH - 1
@@ -356,6 +417,13 @@ app.registerExtension({
                         if (px < bx || px > bx + bw || py < by || py > by + bh) {
                             return false;
                         }
+                        // Under a fixed aspect the dashed implied rect
+                        // IS the crop; grabbing it makes it real so the
+                        // same move/resize paths apply.
+                        const ratioDown = aspectRatio();
+                        if (!state.rect && ratioDown) {
+                            state.rect = impliedRect(ratioDown);
+                        }
                         state.drag = { ...hitTest(px, py), startX: px, startY: py, moved: false };
                         const el = event.target;
                         if (el?.style) {
@@ -379,18 +447,26 @@ app.registerExtension({
                         if (Math.abs(px - drag.startX) + Math.abs(py - drag.startY) > 2) {
                             drag.moved = true;
                         }
+                        const ratio = aspectRatio();
                         if (drag.mode === "new") {
-                            const x0 = clampX(Math.min(drag.startX, px));
-                            const y0 = clampY(Math.min(drag.startY, py));
-                            const x1 = clampX(Math.max(drag.startX, px));
-                            const y1 = clampY(Math.max(drag.startY, py));
-                            if (x1 - x0 >= MIN_SEL && y1 - y0 >= MIN_SEL) {
-                                state.rect = {
-                                    x: (x0 - bx) / bw,
-                                    y: (y0 - by) / bh,
-                                    w: (x1 - x0) / bw,
-                                    h: (y1 - y0) / bh,
-                                };
+                            if (ratio) {
+                                const locked = ratioRect(
+                                    drag.startX, drag.startY,
+                                    clampX(px), clampY(py), ratio);
+                                if (locked) state.rect = locked;
+                            } else {
+                                const x0 = clampX(Math.min(drag.startX, px));
+                                const y0 = clampY(Math.min(drag.startY, py));
+                                const x1 = clampX(Math.max(drag.startX, px));
+                                const y1 = clampY(Math.max(drag.startY, py));
+                                if (x1 - x0 >= MIN_SEL && y1 - y0 >= MIN_SEL) {
+                                    state.rect = {
+                                        x: (x0 - bx) / bw,
+                                        y: (y0 - by) / bh,
+                                        w: (x1 - x0) / bw,
+                                        h: (y1 - y0) / bh,
+                                    };
+                                }
                             }
                         } else if (drag.mode === "move" && state.rect) {
                             let nx = (clampX(px - drag.offX) - bx) / bw;
@@ -405,17 +481,26 @@ app.registerExtension({
                             let y0 = by + r.y * bh;
                             let x1 = x0 + r.w * bw;
                             let y1 = y0 + r.h * bh;
-                            if (drag.corner.includes("w")) x0 = clampX(px);
-                            if (drag.corner.includes("e")) x1 = clampX(px);
-                            if (drag.corner.includes("n")) y0 = clampY(py);
-                            if (drag.corner.includes("s")) y1 = clampY(py);
-                            if (Math.abs(x1 - x0) >= MIN_SEL && Math.abs(y1 - y0) >= MIN_SEL) {
-                                state.rect = {
-                                    x: (Math.min(x0, x1) - bx) / bw,
-                                    y: (Math.min(y0, y1) - by) / bh,
-                                    w: Math.abs(x1 - x0) / bw,
-                                    h: Math.abs(y1 - y0) / bh,
-                                };
+                            if (ratio) {
+                                // the corner opposite the handle stays put
+                                const ax = drag.corner.includes("w") ? x1 : x0;
+                                const ay = drag.corner.includes("n") ? y1 : y0;
+                                const locked = ratioRect(
+                                    ax, ay, clampX(px), clampY(py), ratio);
+                                if (locked) state.rect = locked;
+                            } else {
+                                if (drag.corner.includes("w")) x0 = clampX(px);
+                                if (drag.corner.includes("e")) x1 = clampX(px);
+                                if (drag.corner.includes("n")) y0 = clampY(py);
+                                if (drag.corner.includes("s")) y1 = clampY(py);
+                                if (Math.abs(x1 - x0) >= MIN_SEL && Math.abs(y1 - y0) >= MIN_SEL) {
+                                    state.rect = {
+                                        x: (Math.min(x0, x1) - bx) / bw,
+                                        y: (Math.min(y0, y1) - by) / bh,
+                                        w: Math.abs(x1 - x0) / bw,
+                                        h: Math.abs(y1 - y0) / bh,
+                                    };
+                                }
                             }
                         }
                         this.triggerDraw?.();
@@ -550,10 +635,39 @@ app.registerExtension({
                 };
             }
 
+            // Switching aspect snaps a drawn crop to the new shape --
+            // same center, same area, shrunk only if the image cannot
+            // hold it. No crop drawn stays no crop: the dashed implied
+            // rect (and the server's centered cut) already say what an
+            // empty selection means. Back to free changes nothing.
+            const aspectWidget = node.widgets.find((w) => w.name === "aspect");
+            if (aspectWidget) {
+                const prevAspectCallback = aspectWidget.callback;
+                aspectWidget.callback = function () {
+                    const r = prevAspectCallback?.apply(this, arguments);
+                    const ratio = aspectRatio();
+                    if (ratio && state.rect && state.img) {
+                        state.rect = snapRectToAspect(
+                            state.rect, state.img.width, state.img.height,
+                            ratio);
+                        syncCrop();
+                    }
+                    editorWidget.triggerDraw?.();
+                    node.setDirtyCanvas(true, true);
+                    return r;
+                };
+            }
+
             let loadSeq = 0;
             function loadImage(autoFit = false) {
                 const seq = ++loadSeq;
+                state.loadedValue = imageWidget.value;
                 const info = parseImageValue(imageWidget.value);
+                // What the mask editor paints on (see previewMediaType).
+                node.images = info
+                    ? [{ filename: info.filename, subfolder: info.subfolder,
+                         type: info.type }]
+                    : undefined;
                 if (!info) {
                     state.img = null;
                     node.setDirtyCanvas(true, true);

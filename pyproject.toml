@@ -1,0 +1,22 @@
+[project]
+name = "comfyui-obvpm"
+description = "Everyday workflow nodes: an interactive Load Image & Crop, Load Images & Compose (several crops packed into one reference image), megapixel downscaling, optional gates, lazy switches, bundles, Value Presets, fallback values, and the beta57 scheduler. Companion to comfyui-obvpm-timeline."
+version = "0.1.0"
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.9"
+
+# Deliberately empty: every third-party import in this pack (torch,
+# torchaudio, numpy, safetensors, av) is already in ComfyUI's own
+# requirements.txt. Listing them again would let this pack's pins
+# contradict core's on someone else's install.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/chanon/comfyui-obvpm"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "chanon"
+DisplayName = "comfyui-obvpm"
+Icon = ""

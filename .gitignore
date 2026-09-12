@@ -5,3 +5,6 @@ Thumbs.db
 desktop.ini
 
 private/
+
+# cygwin/git-bash crash dumps -- land wherever the shell was cwd'd
+*.stackdump
