@@ -267,7 +267,7 @@ ComfyUI offers three different ways to "not run" part of a workflow, and the nod
 
 Mute and bypass act *downstream* of the gate; only lazy evaluation saves the *upstream* work feeding the unselected side.
 
-Switching a branch off **completely** therefore needs both at once, and which one you are missing is easy to misdiagnose. Laziness alone cannot stop a save node or a preview: every `OUTPUT_NODE` is an execution root, so nothing reaches it *through* a wire and there is no evaluation to prune. A blocker alone cannot stop the work that feeds the gate, because by the time an eager input can be objected to it has already been computed. The companion pack's **H3 Run Mode Gate** is the two combined in one node, which is what a one-wire branch switch takes.
+Switching a branch off **completely** therefore needs both at once, and which one you are missing is easy to misdiagnose. Laziness alone cannot stop a save node or a preview: every `OUTPUT_NODE` is an execution root, so nothing reaches it *through* a wire and there is no evaluation to prune. A blocker alone cannot stop the work that feeds the gate, because by the time an eager input can be objected to it has already been computed.
 
 ### Gates (obvpm/gates)
 
