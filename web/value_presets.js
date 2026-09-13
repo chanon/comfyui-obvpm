@@ -745,7 +745,7 @@ async function openSchemaEditor(node) {
             const query = search.value.trim().toLowerCase();
             results.replaceChildren();
             results.appendChild(
-                el("div", { color: DIM, padding: "4px 6px" }, "Basic"));
+                el("div", { color: DIM, padding: "4px 6px" }, "Primitives"));
             for (const basic of BASIC) {
                 const hay = (basic.kind + " " + basic.label).toLowerCase();
                 if (query && !hay.includes(query)) continue;
@@ -758,8 +758,9 @@ async function openSchemaEditor(node) {
             const types = await fetchTypes();
             results.appendChild(el(
                 "div", { color: DIM, padding: "10px 6px 4px" },
-                "Borrow a dropdown from a node"));
+                "Use a dropdown type from a node"));
             let shown = 0;
+            let group = null;
             for (const type of types) {
                 const address = type.node + "." + type.input;
                 const hay = (address + " " + type.pack).toLowerCase();
@@ -767,9 +768,18 @@ async function openSchemaEditor(node) {
                 // the list runs to hundreds on a full install; the search
                 // box is the way through it, not a longer scroll
                 if (++shown > 200) break;
+                // the server sorts by pack (this one, core, the rest), so
+                // a header whenever the pack changes groups the list
+                if (type.pack !== group) {
+                    group = type.pack;
+                    results.appendChild(el(
+                        "div", { color: DIM, font: "11px sans-serif",
+                                 padding: "8px 6px 2px", opacity: "0.8" },
+                        type.pack));
+                }
                 const detail = type.count + " choices — "
                     + type.sample.join(", ")
-                    + (type.mine ? ""
+                    + (type.mine || type.core ? ""
                        : "    ⚠ from " + type.pack + ", so this "
                          + "schema needs that pack installed");
                 results.appendChild(entry(

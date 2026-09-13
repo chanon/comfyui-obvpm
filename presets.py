@@ -30,7 +30,7 @@ its pin state. This node's own signature is five widgets, forever,
 whatever the schema says.
 
 THE TYPES ARE REAL. A field may borrow another node's dropdown by naming
-it -- `@LoraName.lora_name` reads the live list a LoRA loader shows, so
+it -- `@LoraName (obvpm).lora_name` reads the live list a LoRA loader shows, so
 it follows the folder rather than a copy of it made when the preset was
 written. Resolution is a dict lookup over the classes ComfyUI has already
 imported (`NODE_CLASS_MAPPINGS`); nothing here imports a module named by
@@ -44,6 +44,8 @@ INPUT_TYPES methods do execute.
 import json
 import logging
 import math
+import os
+import re
 
 from .bundle import BUNDLE, MAX_FIELDS as BUNDLE_MAX_FIELDS
 from .common import _lines
@@ -73,7 +75,7 @@ DEFAULT_SCHEMA = """# one field per line:  name: type [range] [= default]
 # types: text | int | float | bool | choice a, b, c | @Node.input
 steps: int 1..200 = 20
 cfg: float 0..100 = 5.0
-sampler: @SamplerName.sampler_name
+sampler: @SamplerName (obvpm).sampler_name
 """
 
 
@@ -489,17 +491,43 @@ def describe(schema):
     return described
 
 
-def _own_pack(node_class):
-    """Which pack a node class came from, and whether it is ours.
+_MY_FOLDER = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
 
-    Read off the class's own module rather than a list kept here, so a
-    node added to this pack is recognised without anyone remembering to
-    update anything.
+
+def _pack_of(module):
+    """(label, rank, mine, core) for a node class's `__module__`.
+
+    ComfyUI names a custom pack's modules after the file path it loaded
+    them from ("c:/.../custom_nodes/<folder>/..." or
+    "custom_nodes.<folder>.nodes"), and core's after the module
+    ("nodes", "comfy_extras.nodes_x", or the path of that file). The
+    label is the pack FOLDER, which is what a user recognises; core is
+    one group called "ComfyUI core". Rank orders the picker: this pack, then
+    core, then everyone else.
     """
-    module = str(getattr(node_class, "__module__", "") or "")
-    root = module.split(".")[0]
-    mine = root == str(__package__ or "").split(".")[0]
-    return root, mine
+    text = str(module or "").replace("\\", "/")
+    parts = [p for p in re.split(r"[/.]", text) if p]
+    if "custom_nodes" in parts:
+        after = parts[parts.index("custom_nodes") + 1:]
+        label = after[0] if after else "custom_nodes"
+        mine = label.lower() == _MY_FOLDER.lower()
+        return label, (0 if mine else 2), mine, False
+    return "ComfyUI core", 1, False, True
+
+
+def _own_pack(node_class):
+    """Which pack a node class came from -- see `_pack_of`."""
+    return _pack_of(getattr(node_class, "__module__", ""))
+
+
+def _hidden_from_picker(node_name, input_name):
+    """This pack's dropdowns that only repeat another entry.
+
+    Every optional gate carries the same two-value `on_empty`; one entry
+    (the Any gate's) is enough to borrow it from.
+    """
+    return (input_name == "on_empty"
+            and not str(node_name).startswith("AnyOptionalGate"))
 
 
 def catalogue():
@@ -524,9 +552,11 @@ def catalogue():
             spec = node_class.INPUT_TYPES()
         except Exception:
             continue                       # its own problem, not ours
-        pack, mine = _own_pack(node_class)
+        pack, rank, mine, core = _own_pack(node_class)
         for section in ("required", "optional"):
             for input_name, entry in (spec.get(section) or {}).items():
+                if mine and _hidden_from_picker(node_name, input_name):
+                    continue
                 options = entry[0] if isinstance(entry, (list, tuple)) \
                     else entry
                 if not (isinstance(options, (list, tuple)) and options
@@ -539,10 +569,11 @@ def catalogue():
                     # enough to recognise the list, not enough to ship a
                     # few thousand LoRA filenames to a dropdown menu
                     "sample": list(options[:6]),
-                    "pack": pack, "mine": mine,
+                    "pack": pack, "mine": mine, "core": core, "rank": rank,
                 }
                 found.append(item)
-    found.sort(key=lambda t: (not t["mine"], t["node"].lower(),
+    # grouped by pack: this pack, then core, then the rest alphabetically
+    found.sort(key=lambda t: (t["rank"], t["pack"].lower(), t["node"].lower(),
                               t["input"].lower()))
     return found
 

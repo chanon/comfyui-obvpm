@@ -388,3 +388,53 @@ class PresetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PackGroupingTests(unittest.TestCase):
+    """The type picker groups by pack: this pack, then core, then others."""
+
+    def test_pack_of_reads_module_names_comfyui_uses(self):
+        p = presets._pack_of
+        self.assertEqual(p("nodes"), ("ComfyUI core", 1, False, True))
+        self.assertEqual(p("comfy_extras.nodes_hooks"), ("ComfyUI core", 1, False, True))
+        self.assertEqual(p(r"C:\x\ComfyUI\comfy_extras\nodes_hooks"), ("ComfyUI core", 1, False, True))
+        self.assertEqual(p("comfy_api_nodes.nodes_gemini")[0], "ComfyUI core")
+        self.assertEqual(p("custom_nodes.comfyui-kjnodes.nodes.x"), ("comfyui-kjnodes", 2, False, False))
+        self.assertEqual(p(r"c:\AI\ComfyUI\custom_nodes\rgthree-comfy"), ("rgthree-comfy", 2, False, False))
+        mine = presets._MY_FOLDER
+        self.assertEqual(p("custom_nodes.%s.presets" % mine), (mine, 0, True, False))
+        self.assertEqual(p("c:/AI/ComfyUI/custom_nodes/%s/presets.py" % mine.upper())[1], 0)
+        self.assertEqual(p("")[0], "ComfyUI core")
+
+    def test_catalogue_is_grouped_by_rank_then_pack(self):
+        class Pick:
+            @classmethod
+            def INPUT_TYPES(cls):
+                return {"required": {"choice": (["a", "b"],)}}
+        mine = type("Mine", (Pick,), {"__module__": "custom_nodes.%s.values" % presets._MY_FOLDER})
+        core = type("KSampler", (Pick,), {"__module__": "nodes"})
+        other = type("Other", (Pick,), {"__module__": "custom_nodes.zz-pack.nodes"})
+        other2 = type("Other2", (Pick,), {"__module__": "custom_nodes.aa-pack.nodes"})
+
+        class Gate:
+            @classmethod
+            def INPUT_TYPES(cls):
+                return {"required": {"on_empty": (["mute", "bypass"],)}}
+        my_mod = "custom_nodes.%s.gates" % presets._MY_FOLDER
+        any_gate = type("AnyGate", (Gate,), {"__module__": my_mod})
+        image_gate = type("ImageGate", (Gate,), {"__module__": my_mod})
+        registry.NODE_CLASS_MAPPINGS = {
+            "Other": other, "KSampler": core, "Mine": mine, "Other2": other2,
+            # only the Any gate's on_empty is offered; the others repeat it
+            "ImageOptionalGate (obvpm)": image_gate, "AnyOptionalGate (obvpm)": any_gate}
+        try:
+            got = [(t["pack"], t["node"], t["rank"], t["core"]) for t in presets.catalogue()]
+        finally:
+            registry.NODE_CLASS_MAPPINGS = {}
+        self.assertEqual(got, [
+            (presets._MY_FOLDER, "AnyOptionalGate (obvpm)", 0, False),
+            (presets._MY_FOLDER, "Mine", 0, False),
+            ("ComfyUI core", "KSampler", 1, True),
+            ("aa-pack", "Other2", 2, False),
+            ("zz-pack", "Other", 2, False),
+        ])

@@ -6,6 +6,10 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 ## Updates
 
+### Latest HEAD
+
+- Value Presets: the field type picker is now grouped by node pack, with nodes from this pack first, then ComfyUI core, then other packs, each under its own header.
+
 ### 0.2.0 (2026-09-13)
 
 - In order to fix issue #4 which was caused by the `Bundle` node class id clashing with another node pack's Bundle node, the internal class ids for all nodes have been suffixed with ` (obvpm)`. This ensures there will be no future clashes.
