@@ -9,6 +9,8 @@ ComfyUI's global registry.
 
 Node classes are addressed by their NODE_CLASS_MAPPINGS key, never by
 module path, so which file a class lives in is invisible to a workflow.
+Every key carries the " (obvpm)" suffix (ids.py has the story, and the map
+from the bare ids of 0.1.x that old workflows still load through).
 
 The MiniMax H3 clip-composition nodes live in the companion pack
 comfyui-obvpm-timeline; the two packs share nothing at import time.
@@ -49,6 +51,7 @@ from .image import DownscaleImageToMegapixels
 from .pickers import LoraName, SamplerName, SchedulerName
 from .presets import ValuePresets
 from . import presets as _presets
+from . import ids as _ids
 from .switches import (
     LazyCaseSwitch,
     LazyCaseSwitchAuto,
@@ -61,65 +64,66 @@ from .vram import CleanVRAM
 
 
 NODE_CLASS_MAPPINGS = {
-    "ImageOptionalGate": ImageOptionalGate,
-    "VideoOptionalGate": VideoOptionalGate,
-    "AudioOptionalGate": AudioOptionalGate,
-    "ModelOptionalGate": ModelOptionalGate,
-    "LatentOptionalGate": LatentOptionalGate,
-    "AnyOptionalGate": AnyOptionalGate,
-    "MuteGate": MuteGate,
-    "LazySwitch": LazySwitch,
-    "LazySwitch2": LazySwitch2,
-    "LazySwitch3": LazySwitch3,
-    "LazyCaseSwitch": LazyCaseSwitch,
-    "LazyCaseSwitchAuto": LazyCaseSwitchAuto,
-    "DownscaleImageToMegapixels": DownscaleImageToMegapixels,
-    "FirstFloat": FirstFloat,
-    "FirstInt": FirstInt,
-    "Dropdown": Dropdown,
-    "Bundle": Bundle,
-    # Historical id -- saved workflows name it, so it stays. Display: the
-    # plain "Unbundle" (the named variants and BundleGet were folded into
-    # these two before anything shipped).
-    "UnbundleAuto": UnbundleAuto,
-    "BundlePeek": BundlePeek,
-    "ValuePresets": ValuePresets,
-    "LoadImageCrop": LoadImageCrop,
-    "LoadImagesCompose": LoadImagesCompose,
-    "LoraName": LoraName,
-    "SamplerName": SamplerName,
-    "SchedulerName": SchedulerName,
-    "CleanVRAM": CleanVRAM,
+    "ImageOptionalGate (obvpm)": ImageOptionalGate,
+    "VideoOptionalGate (obvpm)": VideoOptionalGate,
+    "AudioOptionalGate (obvpm)": AudioOptionalGate,
+    "ModelOptionalGate (obvpm)": ModelOptionalGate,
+    "LatentOptionalGate (obvpm)": LatentOptionalGate,
+    "AnyOptionalGate (obvpm)": AnyOptionalGate,
+    "MuteGate (obvpm)": MuteGate,
+    "LazySwitch (obvpm)": LazySwitch,
+    "LazySwitch2 (obvpm)": LazySwitch2,
+    "LazySwitch3 (obvpm)": LazySwitch3,
+    "LazyCaseSwitch (obvpm)": LazyCaseSwitch,
+    "LazyCaseSwitchAuto (obvpm)": LazyCaseSwitchAuto,
+    "DownscaleImageToMegapixels (obvpm)": DownscaleImageToMegapixels,
+    "FirstFloat (obvpm)": FirstFloat,
+    "FirstInt (obvpm)": FirstInt,
+    "Dropdown (obvpm)": Dropdown,
+    "Bundle (obvpm)": Bundle,
+    "Unbundle (obvpm)": UnbundleAuto,
+    "PeekBundle (obvpm)": BundlePeek,
+    "ValuePresets (obvpm)": ValuePresets,
+    "LoadImageCrop (obvpm)": LoadImageCrop,
+    "LoadImagesCompose (obvpm)": LoadImagesCompose,
+    "LoraName (obvpm)": LoraName,
+    "SamplerName (obvpm)": SamplerName,
+    "SchedulerName (obvpm)": SchedulerName,
+    "CleanVRAM (obvpm)": CleanVRAM,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageOptionalGate": "Optional Image",
-    "VideoOptionalGate": "Optional Video",
-    "AudioOptionalGate": "Optional Audio",
-    "ModelOptionalGate": "Required Model",
-    "LatentOptionalGate": "Optional Latent",
-    "AnyOptionalGate": "Optional Any",
-    "MuteGate": "Mute",
-    "LazySwitch": "Lazy Switch",
-    "LazySwitch2": "Lazy Switch 2 Values",
-    "LazySwitch3": "Lazy Switch 3 Values",
-    "LazyCaseSwitch": "Lazy Case Switch",
-    "LazyCaseSwitchAuto": "Lazy Case Switch (auto)",
-    "DownscaleImageToMegapixels": "Downscale Image to Megapixels",
-    "FirstFloat": "First Float (else fallback)",
-    "FirstInt": "First Int (else fallback)",
-    "Dropdown": "Dropdown",
-    "Bundle": "Bundle",
-    "UnbundleAuto": "Unbundle",
-    "BundlePeek": "Peek Bundle",
-    "ValuePresets": "Value Presets",
-    "LoadImageCrop": "Load Image & Crop",
-    "LoadImagesCompose": "Load Images & Compose",
-    "LoraName": "Lora Name",
-    "SamplerName": "Sampler Name",
-    "SchedulerName": "Scheduler Name",
-    "CleanVRAM": "Clean VRAM",
+    "ImageOptionalGate (obvpm)": "Optional Image",
+    "VideoOptionalGate (obvpm)": "Optional Video",
+    "AudioOptionalGate (obvpm)": "Optional Audio",
+    "ModelOptionalGate (obvpm)": "Required Model",
+    "LatentOptionalGate (obvpm)": "Optional Latent",
+    "AnyOptionalGate (obvpm)": "Optional Any",
+    "MuteGate (obvpm)": "Mute",
+    "LazySwitch (obvpm)": "Lazy Switch",
+    "LazySwitch2 (obvpm)": "Lazy Switch 2 Values",
+    "LazySwitch3 (obvpm)": "Lazy Switch 3 Values",
+    "LazyCaseSwitch (obvpm)": "Lazy Case Switch",
+    "LazyCaseSwitchAuto (obvpm)": "Lazy Case Switch (auto)",
+    "DownscaleImageToMegapixels (obvpm)": "Downscale Image to Megapixels",
+    "FirstFloat (obvpm)": "First Float (else fallback)",
+    "FirstInt (obvpm)": "First Int (else fallback)",
+    "Dropdown (obvpm)": "Dropdown",
+    "Bundle (obvpm)": "Bundle",
+    "Unbundle (obvpm)": "Unbundle",
+    "PeekBundle (obvpm)": "Peek Bundle",
+    "ValuePresets (obvpm)": "Value Presets",
+    "LoadImageCrop (obvpm)": "Load Image & Crop",
+    "LoadImagesCompose (obvpm)": "Load Images & Compose",
+    "LoraName (obvpm)": "Lora Name",
+    "SamplerName (obvpm)": "Sampler Name",
+    "SchedulerName (obvpm)": "Scheduler Name",
+    "CleanVRAM (obvpm)": "Clean VRAM",
 }
+
+# The bare ids of 0.1.x still load: the frontend rewrites them on the way
+# in, and ComfyUI's replacement registry covers API-format prompts.
+_ids.register_replacements(NODE_CLASS_MAPPINGS)
 
 try:
     _presets.register()

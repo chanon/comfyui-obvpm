@@ -47,6 +47,7 @@ import math
 
 from .bundle import BUNDLE, MAX_FIELDS as BUNDLE_MAX_FIELDS
 from .common import _lines
+from .ids import RENAMED
 
 _LOG = logging.getLogger("obvpm")
 
@@ -222,6 +223,9 @@ def ref_choices(ref, field_name, descriptors=None):
             "Value Presets: field %r borrows %s.%s, but the node registry "
             "is not available here." % (field_name, node_name, input_name))
     node_class = NODE_CLASS_MAPPINGS.get(node_name)
+    if node_class is None and node_name in RENAMED:
+        # a schema written before 0.2.0 names this pack's bare ids
+        node_class = NODE_CLASS_MAPPINGS.get(RENAMED[node_name])
     if node_class is None:
         raise ValueError(
             "Value Presets: field %r borrows its choices from node %r, "

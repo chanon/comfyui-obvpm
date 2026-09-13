@@ -40,7 +40,7 @@ function parseImageValue(value) {
 app.registerExtension({
     name: "obvpm.load_image_crop",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== "LoadImageCrop") return;
+        if (nodeData.name !== "LoadImageCrop (obvpm)") return;
 
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {

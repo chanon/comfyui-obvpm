@@ -615,8 +615,8 @@ function isArtiusImage(asset) {
 }
 
 function isComposeNode(node) {
-    return !!node && (node.comfyClass === "LoadImagesCompose"
-                      || node.type === "LoadImagesCompose");
+    return !!node && (node.comfyClass === "LoadImagesCompose (obvpm)"
+                      || node.type === "LoadImagesCompose (obvpm)");
 }
 
 async function artiusAddToNode(node, assets) {
@@ -742,7 +742,7 @@ function hookArtiusBridge() {
 app.registerExtension({
     name: "obvpm.compose_images",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== "LoadImagesCompose") return;
+        if (nodeData.name !== "LoadImagesCompose (obvpm)") return;
         hookArtiusBridge();
         hookListWheel();
 

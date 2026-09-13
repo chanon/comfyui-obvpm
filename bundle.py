@@ -95,8 +95,8 @@ class UnbundleAuto:
     the node's config dialog) overrides that: reorder, or a subset --
     the server pulls BY NAME in the order given.
 
-    The class keeps its historical id ("UnbundleAuto") so every saved
-    workflow loads; the display name is plain "Unbundle".
+    Registered as "Unbundle (obvpm)" (the class name is historical); the
+    display name is plain "Unbundle".
     """
 
     CATEGORY = "obvpm/bundle"

@@ -4,6 +4,14 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
+## Updates
+
+### 0.2.0 (2026-09-13)
+
+- In order to fix issue #4 which was caused by the `Bundle` node class id clashing with another node pack's Bundle node, the internal class ids for all nodes have been suffixed with ` (obvpm)`. This ensures there will be no future clashes.
+
+- Workflows saved using previous versions should be migrated automatically upon open. If you find the `Bundle` node in a workflow still not working, please delete it and create a new one.
+
 ## YouTube Intro Videos
 
 To quickly see what these nodes are useful for, you can check out these YouTube videos that I made to introduce them

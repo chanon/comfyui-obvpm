@@ -126,7 +126,7 @@ function showReport(node, text) {
 app.registerExtension({
     name: "obvpm.peek",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== "BundlePeek") return;
+        if (nodeData.name !== "PeekBundle (obvpm)") return;
 
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {

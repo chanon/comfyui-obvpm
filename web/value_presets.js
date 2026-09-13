@@ -37,7 +37,7 @@ import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL,
  * `update` then has something to update.
  */
 
-const NODE = "ValuePresets";
+const NODE = "ValuePresets (obvpm)";
 const CUSTOM = "custom";
 
 // Widgets this node declares. Everything else on it is built here.

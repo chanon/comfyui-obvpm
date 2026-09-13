@@ -305,7 +305,7 @@ function packerOf(node, slotName, depth = 0) {
     const src = bundleSourceFor(node, slotName, depth);
     if (!src || depth >= 8) return null;
     const { node: origin, slot } = src;
-    if (origin.type === "UnbundleAuto") {
+    if (origin.type === "Unbundle (obvpm)") {
         const out = origin.outputs?.[slot];
         const field = out ? (out.label || out.localized_name || out.name) : "";
         const outer = field ? packerOf(origin, "in", depth + 1) : null;
@@ -326,7 +326,7 @@ export function bundleNamesFor(node, slotName, depth = 0) {
     const origin = src.node;
     // A bundle taken out of another bundle: the names are the inner
     // Bundle's, found through the Unbundle (see packerOf).
-    if (origin.type === "UnbundleAuto") {
+    if (origin.type === "Unbundle (obvpm)") {
         return packerOf(node, slotName, depth)?.names ?? null;
     }
     // Read the Bundle's list the same way it does, so a wired-in list
@@ -1135,14 +1135,14 @@ function watchGraph(node) {
 
 // Which multiline widget drives each node, and what its lines control.
 const DRIVEN = {
-    Dropdown: { list: "options" },
-    LazyCaseSwitch: {
+    "Dropdown (obvpm)": { list: "options" },
+    "LazyCaseSwitch (obvpm)": {
         list: "cases", side: "inputs", prefix: "on_case_", pin: "fallback",
     },
     // Same switch, named by what is wired into it. A branch is named after
     // the NODE feeding it rather than the slot's type, which several
     // branches would share.
-    LazyCaseSwitchAuto: {
+    "LazyCaseSwitchAuto (obvpm)": {
         list: "cases", side: "inputs", prefix: "on_case_", pin: "fallback",
         autogrow: true, nameFrom: "title",
     },
@@ -1150,7 +1150,7 @@ const DRIVEN = {
     // the config dialog. The hidden names list is still the server
     // channel, and a typed list from the pre-merge node is adopted as
     // renames on first load (migrateTypedNames).
-    Bundle: {
+    "Bundle (obvpm)": {
         list: "names", side: "inputs", prefix: "in_", autogrow: true,
         compact: true, fold: true,
         config: openBundleConfig, menu: "Configure bundle…",
@@ -1163,7 +1163,7 @@ const DRIVEN = {
     // layout (reorder/hide) writes the hidden names list, which the
     // server pulls by name. Its single pin is named "in", so that is
     // what the trace starts from.
-    UnbundleAuto: {
+    "Unbundle (obvpm)": {
         list: "names", side: "outputs", prefix: "out_", trace: "in",
         compact: true, hideList: true, fold: true,
         config: openUnbundleConfig, menu: "Configure outputs…",

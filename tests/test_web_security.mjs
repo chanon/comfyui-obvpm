@@ -109,7 +109,7 @@ test("actual Compose editor refuses oversized persisted data without overwriting
         addCustomWidget(w) { this.widgets.push(w); return w; }
         setDirtyCanvas() {}
     }
-    await h.extensions.find(e => e.name === "obvpm.compose_images").beforeRegisterNodeDef(Node, { name: "LoadImagesCompose" });
+    await h.extensions.find(e => e.name === "obvpm.compose_images").beforeRegisterNodeDef(Node, { name: "LoadImagesCompose (obvpm)" });
     const persisted = JSON.stringify(Array(65).fill("a.png"));
     const node = new Node(persisted);
     node.onNodeCreated();
