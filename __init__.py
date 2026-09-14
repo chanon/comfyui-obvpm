@@ -99,7 +99,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ModelOptionalGate (obvpm)": "Required Model",
     "LatentOptionalGate (obvpm)": "Optional Latent",
     "AnyOptionalGate (obvpm)": "Optional Any",
-    "MuteGate (obvpm)": "Mute",
+    "MuteGate (obvpm)": "Mute If",
     "LazySwitch (obvpm)": "Lazy Switch",
     "LazySwitch2 (obvpm)": "Lazy Switch 2 Values",
     "LazySwitch3 (obvpm)": "Lazy Switch 3 Values",
