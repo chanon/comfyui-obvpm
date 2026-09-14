@@ -9,6 +9,8 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 ### Latest HEAD
 
 - Value Presets: the field type picker is now grouped by node pack, with nodes from this pack first, then ComfyUI core, then other packs, each under its own header.
+- The Mute node is now called Mute If. Same node, same id; only the display name changed.
+- Downscale Image to Megapixels: new `resolution_steps` widget rounds the output width and height down to a multiple, 32 by default. Set it to 1 for the old behaviour; note that existing graphs pick up the default.
 
 ### 0.2.0 (2026-09-13)
 
@@ -72,7 +74,7 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | [Optional Image / Video / Audio / Latent / Any](#optional-image--optional-video--optional-audio--optional-latent--optional-any) | Pass a value through; mute or bypass when it is missing |
 | [Required Model](#required-model)                                                                                               | Refuse to queue until a model is wired in               |
-| [Mute](#mute)                                                                                                                   | Block everything downstream on a boolean                |
+| [Mute If](#mute-if)                                                                                                                 | Block everything downstream on a boolean                |
 | [Lazy Switch](#lazy-switch)                                                                                                     | Boolean two-way switch; only the chosen side runs       |
 | [Lazy Switch 2 Values / 3 Values](#lazy-switch-2-values--3-values)                                                              | The same switch for two or three values together        |
 | [Lazy Case Switch](#lazy-case-switch)                                                                                           | Pick a branch by name from a list you write             |
@@ -167,13 +169,14 @@ The only output is `image`. Changing any crop, or the file behind any layer, re-
 
 ![Downscale Image to Megapixels node](assets/downscale-image-to-megapixels.webp)
 
-Scales an image down so its total pixel count fits within `megapixels`, keeping aspect ratio. Images already at or under the target pass through completely untouched (no resample). With no image connected it outputs `None` (bypass). 1.0 megapixels = 1024×1024 pixels, matching ComfyUI's `ImageScaleToTotalPixels` convention.
+Scales an image down so its total pixel count fits within `megapixels`, keeping aspect ratio. Images already at or under the target (and on the `resolution_steps` grid) pass through completely untouched (no resample). With no image connected it outputs `None` (bypass). 1.0 megapixels = 1024×1024 pixels, matching ComfyUI's `ImageScaleToTotalPixels` convention.
 
-| Input        | What it does                                                                            |
-| ------------ | --------------------------------------------------------------------------------------- |
-| `megapixels` | Maximum output size. Larger images are scaled down to fit; smaller ones pass through.   |
-| `method`     | Resampling filter: `lanczos` (default), `area`, `bicubic`, `bilinear`, `nearest-exact`. |
-| `image`      | Optional. Unconnected outputs `None`.                                                   |
+| Input              | What it does                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `megapixels`       | Maximum output size. Larger images are scaled down to fit; smaller ones pass through.                                                                                                     |
+| `method`           | Resampling filter: `lanczos` (default), `area`, `bicubic`, `bilinear`, `nearest-exact`.                                                                                                   |
+| `resolution_steps` | Round the output width and height **down** to a multiple of this (default 32). `1` = no rounding. An image within the budget but off the grid is snapped too; nothing is ever scaled up.                          |
+| `image`            | Optional. Unconnected outputs `None`.                                                                                                                                                     |
 
 ## Value Presets
 
@@ -273,11 +276,11 @@ ComfyUI offers three different ways to "not run" part of a workflow, and the nod
 
 | Mechanism                   | What happens                                                                                                                                      | When to use                                                            |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Mute** (ExecutionBlocker) | Every node downstream of the blocked output is silently skipped. Cannot be caught or handled downstream.                                          | Kill an entire path when its input is missing.                         |
+| **Mute If** (ExecutionBlocker) | Every node downstream of the blocked output is silently skipped. Cannot be caught or handled downstream.                                          | Kill an entire path when its input is missing.                         |
 | **Bypass** (forward `None`) | Downstream nodes with an *optional* input see it as unconnected and handle the absence themselves. Feeding `None` into a *required* input errors. | Let a tolerant downstream node decide what to do.                      |
 | **Lazy** (lazy inputs)      | The unselected branch is never executed at all — its upstream nodes don't run and cost nothing.                                                   | Conditionally skip expensive work (sampling, upscaling, whole groups). |
 
-Mute and bypass act *downstream* of the gate; only lazy evaluation saves the *upstream* work feeding the unselected side.
+Mute If and bypass act *downstream* of the gate; only lazy evaluation saves the *upstream* work feeding the unselected side.
 
 Switching a branch off **completely** therefore needs both at once, and which one you are missing is easy to misdiagnose. Laziness alone cannot stop a save node or a preview: every `OUTPUT_NODE` is an execution root, so nothing reaches it *through* a wire and there is no evaluation to prune. A blocker alone cannot stop the work that feeds the gate, because by the time an eager input can be objected to it has already been computed.
 
@@ -298,7 +301,7 @@ Each gate also has a **`present`** boolean output that is true when an input is 
 
 The minimal gate: passes a MODEL through. The input is required, so queueing with nothing connected is refused up front — a missing model is a loud error at this node rather than a mystery downstream.
 
-#### Mute
+#### Mute If
 
 ![Mute node](assets/mute.webp)
 
