@@ -21,7 +21,7 @@ async function harness() {
     const context = vm.createContext({ console, TextEncoder, AbortController, Blob, URL, FormData,
         setTimeout, clearTimeout, alert: msg => alerts.push(msg),
         document: { getElementById: () => style, addEventListener() {}, body: {} },
-        window: {}, LiteGraph: {}, Image: class {} });
+        window: { addEventListener() {}, removeEventListener() {} }, LiteGraph: {}, Image: class {} });
     const cache = new Map();
     const mock = values => new vm.SyntheticModule(Object.keys(values), function () {
         for (const [name, value] of Object.entries(values)) this.setExport(name, value);
@@ -33,7 +33,7 @@ async function harness() {
         if (name.endsWith("scripts/app.js")) mod = mock({ app });
         else if (name.endsWith("scripts/api.js")) mod = mock({ api });
         else if (name === "obvpm_ui.js") mod = mock({ themePalette: () => ({}), el: noop,
-            ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets"].map(k => [k, noop])) });
+            ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets", "valueTooltip"].map(k => [k, noop])) });
         else if (name === "obvpm_artius.js") mod = mock({ ARTIUS_MIME: "test/artius", ARTIUS_ROUTE_BASE: "/artius", artiusRelativePath: () => null, readArtiusAssets: () => null });
         else if (name === "obvpm_bundle_config.js") mod = mock(Object.fromEntries(["addConfigButton", "applyUnbundleLayout", "hasUnbundleLayout", "openBundleConfig", "openUnbundleConfig"].map(k => [k, noop])));
         else if (name === "obvpm_fold.js") mod = mock({ foldButton: noop, installFold: noop, isFolded: n => !!n.flags?.collapsed, syncFold: noop });

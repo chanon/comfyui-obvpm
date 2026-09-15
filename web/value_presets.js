@@ -6,7 +6,7 @@ import { api } from "../../scripts/api.js";
 // palette (the bundle config and Load Images & Compose use them too).
 import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL,
          textBox, pushButton, openOverlay,
-         dropWidgetSockets, themePalette } from "./obvpm_ui.js";
+         dropWidgetSockets, themePalette, valueTooltip } from "./obvpm_ui.js";
 
 /**
  * Value Presets: a control per schema field, and named sets of them.
@@ -170,9 +170,16 @@ function fieldWidget(node, field, value, onChange) {
         // that quietly vanished would look like data loss.
         w.label = w.name;
     }
-    w.tooltip = field.error
-        ? field.error
-        : field.ref ? "Choices from " + field.ref : undefined;
+    const baseTip = field.error || undefined;
+    // The full value on hover whenever the widget draws it cut off -- a
+    // long file name in a narrow node. A getter, not a stored string: the
+    // frontend reads widget.tooltip at hover time, and both the value and
+    // the node's width change long after this build.
+    Object.defineProperty(w, "tooltip", {
+        configurable: true,
+        get: () => valueTooltip(w, node.size?.[0] ?? 0, baseTip),
+        set: () => {},
+    });
     return w;
 }
 

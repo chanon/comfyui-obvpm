@@ -221,3 +221,61 @@ export function openOverlay(width) {
 
     return { overlay, panel, close };
 }
+
+// ---------------------------------------------------------------------------
+// Hover text for a widget whose value is drawn cut off
+// ---------------------------------------------------------------------------
+
+// litegraph's BaseWidget layout constants (margin, label/value gap), and the
+// padding its truncating text routine uses: stepped widgets (combo, number)
+// keep 5 px left and 20 px right for the arrows; text widgets use none.
+const WIDGET_MARGIN = 15;
+const LABEL_VALUE_GAP = 5;
+let measureContext = null;
+
+/** Width of widget text in the canvas's widget font (node inner font). */
+export function widgetTextWidth(text) {
+    try {
+        measureContext ??= document.createElement("canvas").getContext("2d");
+        const lg = typeof LiteGraph !== "undefined" ? LiteGraph : {};
+        measureContext.font =
+            `normal ${lg.NODE_SUBTEXT_SIZE ?? 14}px ${lg.NODE_FONT ?? "Arial"}`;
+        return measureContext.measureText(String(text)).width;
+    } catch {
+        return String(text).length * 7;
+    }
+}
+
+/**
+ * Whether the widget's value is drawn truncated at this node width, by the
+ * same arithmetic as litegraph's drawTruncatingText: the value is cut when
+ * label + gap + value overflow the text area and the active truncation mode
+ * shortens the value (the default mode shortens the label first, so there
+ * the value is only cut when it alone is wider than the area).
+ */
+export function isWidgetValueCutOff(widget, nodeWidth, measure = widgetTextWidth,
+                                    flags = typeof LiteGraph !== "undefined" ? LiteGraph : {}) {
+    if (!widget || widget.type === "toggle" || widget.type === "boolean") return false;
+    const value = String(widget._displayValue ?? widget.value ?? "");
+    if (!value || !(nodeWidth > 0)) return false;
+    const stepped = widget.type === "combo" || widget.type === "number";
+    const left = stepped ? 5 : 0;
+    const right = stepped ? 20 : 0;
+    const area = nodeWidth - (WIDGET_MARGIN * 2 + left) - 2 * WIDGET_MARGIN - right;
+    const label = String(widget.displayName ?? widget.label ?? widget.name ?? "");
+    const labelWidth = measure(label);
+    const valueWidth = measure(value);
+    if (labelWidth + LABEL_VALUE_GAP + valueWidth <= area) return false;
+    if (flags.truncateWidgetTextEvenly || flags.truncateWidgetValuesFirst) return true;
+    return valueWidth > area;
+}
+
+/**
+ * A widget's tooltip: its full value when that value is drawn cut off,
+ * followed by `baseTip` (the widget's usual tooltip) when there is one.
+ */
+export function valueTooltip(widget, nodeWidth, baseTip, measure, flags) {
+    if (!isWidgetValueCutOff(widget, nodeWidth, measure, flags)) return baseTip;
+    const full = String(widget.value ?? "");
+    return baseTip ? full + "\n\n" + baseTip : full;
+}
