@@ -6,7 +6,7 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 ## Updates
 
-### Latest HEAD
+### 0.2.1 (2026-09-15)
 
 - Value Presets: the field type picker is now grouped by node pack, with nodes from this pack first, then ComfyUI core, then other packs, each under its own header.
 - Value Presets: a number's range now sets how many decimals its widget shows and steps by. For example:
