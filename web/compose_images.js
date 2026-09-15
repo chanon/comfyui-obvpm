@@ -510,13 +510,17 @@ const MIN_SEL = 6;
 const MIN_EDITOR_H = 140;
 const RESIZE_ZONE = 15; // LGraphNode.resizeHandleSize
 const LIST_W = 68;
-// Entries shrink as layers are added, down to a floor -- below about this
-// a thumbnail stops being recognisable, which is the whole point of the
-// strip. Past the floor the list scrolls instead of shrinking further.
-const LIST_ENTRY_MIN = 34;
-const LIST_ENTRY_MAX = 46;
+// The strip's width is the user's: the gutter between the strip and the
+// main view is a divider they can drag, and the width is kept in the
+// node's properties. Entries never shrink to fit more layers (the list
+// scrolls instead); they scale with the strip's width, so a wider strip
+// means larger thumbnails, LIST_ENTRY_H tall at the default width.
+const LIST_W_MIN = 48;
+const LIST_W_MAX_FRAC = 0.7;    // of the node body
+const LIST_ENTRY_H = 46;
 const LIST_SCROLLBAR_W = 3;
 const GUTTER = 6;
+const DIVIDER_GRAB = 3;         // px either side of the gutter that count
 const PICK_PLACEHOLDER = "＋ from input folder…";
 
 // Thumbnails are shared across every node on the page: the same
@@ -819,6 +823,9 @@ app.registerExtension({
                 hoverSlot: -1,
                 drag: null,
                 listDrag: null,
+                divDrag: null,  // dragging the strip/main divider
+                pointerOver: false, // the pointer is on this node's body
+                listW: null,    // the strip width the user set, or null
                 scroll: 0,
                 scrollMax: 0,
                 reveal: null,   // an index to bring into view, once
@@ -1085,17 +1092,16 @@ app.registerExtension({
                 return lg.WIDGET_TEXT_COLOR || "#ddd";
             }
 
-            function entryHeight(count, listH) {
-                // Shrink to fit rather than scroll -- but only down to a
-                // floor. Below that the entries stop being readable, so
-                // the list scrolls instead.
-                const raw = listH / Math.max(1, count);
-                return Math.max(LIST_ENTRY_MIN, Math.min(LIST_ENTRY_MAX, raw));
+            function entryHeight(listW, u) {
+                // Never shrunk to fit: more layers scroll. Scaled with
+                // the strip's width so a wider strip shows more of each
+                // thumbnail, not just more air beside it.
+                return Math.round(LIST_ENTRY_H * listW / u.list);
             }
 
             function drawList(ctx, x, y, w, h, u) {
                 const count = state.layers.length + 1; // + the Result row
-                const eh = entryHeight(count, h);
+                const eh = entryHeight(w, u);
                 const total = eh * count;
                 // Scrolling is the USER'S now, so the auto-scroll may
                 // only fire when something moved the selection under
@@ -1532,14 +1538,23 @@ app.registerExtension({
                     // the row hugged the pill band above it.
                     const INFO_PAD = 4;
                     const bodyH = Math.max(1, h - u.row - INFO_PAD);
-                    const listW = Math.min(u.list, w * 0.4);
+                    const listW = clampListW(state.listW ?? u.list, w);
                     const mainX = x + listW + GUTTER;
                     const mainW = Math.max(1, w - listW - GUTTER);
 
                     ctx.save();
                     state.geo = { list: null, main: { x: mainX, y, w: mainW, h: bodyH },
+                                  divider: { x: x + listW, y, w: GUTTER, h: bodyH },
                                   slots: [] };
                     state.geo.list = drawList(ctx, x, y, listW, bodyH, u);
+                    // the divider: a hairline in the gutter, brighter
+                    // while it is being dragged
+                    ctx.strokeStyle = state.divDrag ? "#4af" : "#ffffff22";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + listW + GUTTER / 2 + 0.5, y + 4);
+                    ctx.lineTo(x + listW + GUTTER / 2 + 0.5, y + bodyH - 4);
+                    ctx.stroke();
                     if (state.sel < 0) {
                         drawResult(ctx, mainX, y, mainW, bodyH, u, lowQuality);
                     } else {
@@ -1559,6 +1574,43 @@ app.registerExtension({
                     const down = t === "pointerdown" || t === "mousedown";
                     const move = t === "pointermove" || t === "mousemove";
                     const up = t === "pointerup" || t === "mouseup";
+
+                    // A canvas drag is still a drag to the browser: left
+                    // alone it starts a TEXT SELECTION across the host's
+                    // DOM (node titles, Vue cards), which paints the UI
+                    // blue mid-drag. Claimed drags switch selection off
+                    // for their duration.
+                    const selectionOff = (on) => {
+                        try {
+                            document.body.style.userSelect =
+                                on ? "none" : "";
+                        } catch (err) { /* headless tests */ }
+                    };
+
+                    // ---- the divider between the strip and the view ----
+                    if (down && onDivider(px, py)) {
+                        state.divDrag = { dx: px - geo.divider.x };
+                        selectionOff(true);
+                        repaint();
+                        return true;
+                    }
+                    if (state.divDrag) {
+                        if (move) {
+                            const bodyW = geo.main.x + geo.main.w - geo.list.x;
+                            state.listW = clampListW(
+                                px - state.divDrag.dx - geo.list.x, bodyW);
+                            repaint();
+                            return true;
+                        }
+                        if (up) {
+                            state.divDrag = null;
+                            selectionOff(false);
+                            node.properties = node.properties || {};
+                            node.properties.obvpm_list_w = Math.round(state.listW);
+                            repaint();
+                            return true;
+                        }
+                    }
 
                     // ---- the layer strip ----
                     const inList = geo.list && px >= geo.list.x
@@ -1619,17 +1671,6 @@ app.registerExtension({
 
                     // ---- the crop editor ----
                     const layer = state.layers[state.sel];
-                    // A canvas drag is still a drag to the browser: left
-                    // alone it starts a TEXT SELECTION across the host's
-                    // DOM (node titles, Vue cards), which paints the UI
-                    // blue mid-crop. Claimed drags switch selection off
-                    // for their duration.
-                    const selectionOff = (on) => {
-                        try {
-                            document.body.style.userSelect =
-                                on ? "none" : "";
-                        } catch (err) { /* headless tests */ }
-                    };
                     if (!layer || !state.box) return false;
                     const { bx, by, bw, bh } = state.box;
                     const clampX = (v) => Math.max(bx, Math.min(bx + bw, v));
@@ -1810,6 +1851,18 @@ app.registerExtension({
                 }
             }
 
+            function clampListW(v, bodyW) {
+                const hi = Math.max(LIST_W_MIN, bodyW * LIST_W_MAX_FRAC);
+                return Math.max(LIST_W_MIN, Math.min(hi, Number(v) || 0));
+            }
+
+            function onDivider(px, py) {
+                const d = state.geo?.divider;
+                if (!d) return false;
+                return px >= d.x - DIVIDER_GRAB && px <= d.x + d.w + DIVIDER_GRAB
+                    && py >= d.y && py <= d.y + d.h;
+            }
+
             function rowAt(px, py) {
                 const geo = state.geo?.list;
                 if (!geo) return null;
@@ -1885,6 +1938,7 @@ app.registerExtension({
             function cursorFor(px, py) {
                 const geo = state.geo;
                 if (!geo) return cursorOutside(px, py);
+                if (state.divDrag || onDivider(px, py)) return "col-resize";
                 if (geo.list && px >= geo.list.x && px <= geo.list.x + geo.list.w
                     && py >= geo.list.y && py <= geo.list.y + geo.list.h) {
                     const idx = rowAt(px, py);
@@ -1914,9 +1968,43 @@ app.registerExtension({
                 return state.layers[state.sel]?.crop ? "not-allowed" : "crosshair";
             }
 
+            // Keys, while the pointer is over this node (so the same keys
+            // keep their meaning everywhere else, and never while
+            // typing): Delete / Backspace remove the selected layer, Up /
+            // Down walk the strip, Result row included. Capture on window:
+            // ComfyUI's own keybindings would delete the selected node
+            // or pan the canvas first.
+            const onKeyDown = (e) => {
+                if (state.removed || !state.pointerOver) return;
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                const a = document.activeElement;
+                if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA"
+                          || a.isContentEditable)) return;
+                if (e.key === "Delete" || e.key === "Backspace") {
+                    if (state.sel < 0 || !state.layers[state.sel]) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeLayer(state.sel);
+                    repaint();
+                    return;
+                }
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                    const next = Math.max(-1, Math.min(state.layers.length - 1,
+                        state.sel + (e.key === "ArrowUp" ? -1 : 1)));
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (next === state.sel) return;
+                    state.sel = next;
+                    state.reveal = next;   // scroll the strip to it
+                    repaint();
+                }
+            };
+            window.addEventListener("keydown", onKeyDown, true);
+
             const prevMouseMove = node.onMouseMove;
             node.onMouseMove = function (e, pos, graphCanvas) {
                 prevMouseMove?.apply(this, arguments);
+                state.pointerOver = true;
                 const geo = state.geo;
                 let hover = -2;
                 if (geo && geo.list && pos[0] >= geo.list.x
@@ -1952,6 +2040,7 @@ app.registerExtension({
             const prevMouseLeave = node.onMouseLeave;
             node.onMouseLeave = function () {
                 prevMouseLeave?.apply(this, arguments);
+                state.pointerOver = false;
                 if (!state.drag) {
                     // a drag that never got its pointerup must not leave
                     // the page unselectable
@@ -2009,6 +2098,7 @@ app.registerExtension({
             const prevOnRemoved = node.onRemoved;
             node.onRemoved = function () {
                 state.removed = true;
+                window.removeEventListener("keydown", onKeyDown, true);
                 fileInput?.remove();
                 return prevOnRemoved?.apply(this, arguments);
             };
@@ -2019,6 +2109,8 @@ app.registerExtension({
                 // Workflow load assigns widgets_values directly, with no
                 // callbacks, so the layer list has to be re-read here.
                 readLayers();
+                const lw = Number(this.properties?.obvpm_list_w);
+                state.listW = Number.isFinite(lw) && lw > 0 ? lw : null;
                 state.planKey = "";
                 repaint();
                 return r;

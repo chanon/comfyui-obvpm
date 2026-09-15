@@ -9,7 +9,13 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 ### Latest HEAD
 
 - Value Presets: the field type picker is now grouped by node pack, with nodes from this pack first, then ComfyUI core, then other packs, each under its own header.
-- The Mute node is now called Mute If. Same node, same id; only the display name changed.
+- Value Presets: a number's range now sets how many decimals its widget shows and steps by. For example:
+  - `0..1.0` will have steps at `0.0`, `0.1`, `0.2` ... to `0.9`, `1.0`
+  - `0..1.00` will have steps at `0.00`, `0.01`, `0.02` ... to `0.99`, `1.00` 
+  - The default or `0..1` is 2 decimal points
+- Load Images & Compose: the divider between the layer strip and the main view can be dragged to widen the strip, and its entries no longer shrink as layers are added -- the strip scrolls instead.
+- Load Images & Compose: while the pointer is over the node, Delete or Backspace removes the selected layer and Up / Down move the selection to the previous or next layer.
+- The Mute node is now called Mute If. Same internal id, only the display name changed.
 - Downscale Image to Megapixels: new `resolution_steps` widget rounds the output width and height down to a multiple, 32 by default. Set it to 1 for the old behaviour; note that existing graphs pick up the default.
 
 ### 0.2.0 (2026-09-13)
@@ -74,7 +80,7 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | [Optional Image / Video / Audio / Latent / Any](#optional-image--optional-video--optional-audio--optional-latent--optional-any) | Pass a value through; mute or bypass when it is missing |
 | [Required Model](#required-model)                                                                                               | Refuse to queue until a model is wired in               |
-| [Mute If](#mute-if)                                                                                                                 | Block everything downstream on a boolean                |
+| [Mute If](#mute-if)                                                                                                             | Block everything downstream on a boolean                |
 | [Lazy Switch](#lazy-switch)                                                                                                     | Boolean two-way switch; only the chosen side runs       |
 | [Lazy Switch 2 Values / 3 Values](#lazy-switch-2-values--3-values)                                                              | The same switch for two or three values together        |
 | [Lazy Case Switch](#lazy-case-switch)                                                                                           | Pick a branch by name from a list you write             |
@@ -129,11 +135,11 @@ Several input images, each with its own crop, composed into **one** image within
 
 #### Editing
 
-The node body is a layer strip on the left, a main view on the right, and one info line under both.
+The node body is a layer strip on the left, a main view on the right, and one info line under both. Drag the divider between the strip and the view to widen the strip; its thumbnails grow with it, and the width is saved with the workflow. Entries keep their size however many layers there are, and the strip scrolls past what fits.
 
 - **Add** an image with the `＋ add image` button (opens a file dialog and uploads), by picking one from the `add` dropdown (a live listing of the input folder, subfolders included), by **dropping image files onto the node**, or by **pasting an image from the clipboard** while the node is selected — each becomes a new layer. Cards dragged from the **Artius browser** work too; one already in the input folder is referenced in place rather than copied.
 
-- **Select** a layer by clicking it in the strip. **Delete** it with the ✕ badge on the layer. **Reorder** by dragging a layer up or down the strip; the insertion point is drawn as you go.
+- **Select** a layer by clicking it in the strip. **Delete** it with the ✕ badge on the layer, or press Delete or Backspace while the pointer is over the node. Up and Down move the selection along the strip. **Reorder** by dragging a layer up or down the strip; the insertion point is drawn as you go.
 
 - **Crop** the selected layer in the main view, exactly like [Load Image & Crop](#load-image--crop): drag to draw, drag inside to move, drag a corner to resize, click outside to clear. Each layer keeps its own crop, and the layout re-plans as you drag.
 
@@ -171,12 +177,12 @@ The only output is `image`. Changing any crop, or the file behind any layer, re-
 
 Scales an image down so its total pixel count fits within `megapixels`, keeping aspect ratio. Images already at or under the target (and on the `resolution_steps` grid) pass through completely untouched (no resample). With no image connected it outputs `None` (bypass). 1.0 megapixels = 1024×1024 pixels, matching ComfyUI's `ImageScaleToTotalPixels` convention.
 
-| Input              | What it does                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `megapixels`       | Maximum output size. Larger images are scaled down to fit; smaller ones pass through.                                                                                                     |
-| `method`           | Resampling filter: `lanczos` (default), `area`, `bicubic`, `bilinear`, `nearest-exact`.                                                                                                   |
-| `resolution_steps` | Round the output width and height **down** to a multiple of this (default 32). `1` = no rounding. An image within the budget but off the grid is snapped too; nothing is ever scaled up.                          |
-| `image`            | Optional. Unconnected outputs `None`.                                                                                                                                                     |
+| Input              | What it does                                                                                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `megapixels`       | Maximum output size. Larger images are scaled down to fit; smaller ones pass through.                                                                                                    |
+| `method`           | Resampling filter: `lanczos` (default), `area`, `bicubic`, `bilinear`, `nearest-exact`.                                                                                                  |
+| `resolution_steps` | Round the output width and height **down** to a multiple of this (default 32). `1` = no rounding. An image within the budget but off the grid is snapped too; nothing is ever scaled up. |
+| `image`            | Optional. Unconnected outputs `None`.                                                                                                                                                    |
 
 ## Value Presets
 
@@ -274,11 +280,11 @@ These nodes are built around making *optional paths* work well: workflows where 
 
 ComfyUI offers three different ways to "not run" part of a workflow, and the nodes in this pack are organized around them:
 
-| Mechanism                   | What happens                                                                                                                                      | When to use                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Mechanism                      | What happens                                                                                                                                      | When to use                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | **Mute If** (ExecutionBlocker) | Every node downstream of the blocked output is silently skipped. Cannot be caught or handled downstream.                                          | Kill an entire path when its input is missing.                         |
-| **Bypass** (forward `None`) | Downstream nodes with an *optional* input see it as unconnected and handle the absence themselves. Feeding `None` into a *required* input errors. | Let a tolerant downstream node decide what to do.                      |
-| **Lazy** (lazy inputs)      | The unselected branch is never executed at all — its upstream nodes don't run and cost nothing.                                                   | Conditionally skip expensive work (sampling, upscaling, whole groups). |
+| **Bypass** (forward `None`)    | Downstream nodes with an *optional* input see it as unconnected and handle the absence themselves. Feeding `None` into a *required* input errors. | Let a tolerant downstream node decide what to do.                      |
+| **Lazy** (lazy inputs)         | The unselected branch is never executed at all — its upstream nodes don't run and cost nothing.                                                   | Conditionally skip expensive work (sampling, upscaling, whole groups). |
 
 Mute If and bypass act *downstream* of the gate; only lazy evaluation saves the *upstream* work feeding the unselected side.
 

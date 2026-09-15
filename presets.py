@@ -92,7 +92,7 @@ class Field:
     """One line of the schema: a name, a type, and how to check a value."""
 
     def __init__(self, name, kind, default_text="", choices=None,
-                 ref=None, lo=None, hi=None):
+                 ref=None, lo=None, hi=None, span_text="", decimals=None):
         self.name = name
         self.kind = kind
         self.default_text = default_text
@@ -100,6 +100,12 @@ class Field:
         self.ref = ref
         self.lo = lo
         self.hi = hi
+        # the range AS WRITTEN, so the schema editor can hand it back
+        # unchanged (0..1.00 must not come back as 0..1)
+        self.span_text = span_text
+        # how many decimals a float shows and steps by: as many as the
+        # range was written with, two when it names none
+        self.decimals = decimals
 
     # ---------------------------------------------------------- choices
 
@@ -329,8 +335,12 @@ def _parse_type(number, line, name, rest):
         return Field(name, "choice", default.strip(), choices=options)
     if kind in ("int", "float"):
         span, _, default = tail.partition("=")
-        lo, hi = _parse_range(number, line, kind, span.strip())
-        return Field(name, kind, default.strip(), lo=lo, hi=hi)
+        span = span.strip()
+        lo, hi, typed = _parse_range(number, line, kind, span)
+        decimals = 0 if kind == "int" else (
+            typed if typed is not None else DEFAULT_DECIMALS)
+        return Field(name, kind, default.strip(), lo=lo, hi=hi,
+                     span_text=span, decimals=decimals)
     _fail(number, line,
           "has an unknown type %r -- use text, int, float, bool, "
           "'choice a, b, c', or @Node.input" % kind)
@@ -342,9 +352,24 @@ def _default_of(tail):
     return default.strip() if sep else ""
 
 
+# a float range written without decimals (0..1) shows this many
+DEFAULT_DECIMALS = 2
+MAX_DECIMALS = 6
+
+
+def _decimals_of(text):
+    """How many digits follow the point in a number as typed, or None."""
+    text = text.strip().lower()
+    if "e" in text or "." not in text:
+        return None
+    return len(text.rsplit(".", 1)[1])
+
+
 def _parse_range(number, line, kind, span):
+    """(min, max, decimals as typed): 0..1.0 asks for one decimal,
+    0..1.00 for two, 0..1 for none in particular (None)."""
     if not span:
-        return (None, None)
+        return (None, None, None)
     lo_text, sep, hi_text = span.partition("..")
     if not sep:
         _fail(number, line, "has a range %r; write it as  min..max" % span)
@@ -358,7 +383,10 @@ def _parse_range(number, line, kind, span):
         _fail(number, line, "has a nonfinite range")
     if lo is not None and hi is not None and lo > hi:
         _fail(number, line, "has a range whose minimum is above its maximum")
-    return (lo, hi)
+    typed = [d for d in (_decimals_of(lo_text), _decimals_of(hi_text))
+             if d is not None]
+    decimals = min(max(typed), MAX_DECIMALS) if typed else None
+    return (lo, hi, decimals)
 
 
 def load_store(text, what):
@@ -474,6 +502,7 @@ def describe(schema):
     for field in parse_schema(schema):
         entry = {"name": field.name, "kind": field.kind,
                  "ref": field.ref, "lo": field.lo, "hi": field.hi,
+                 "span": field.span_text, "decimals": field.decimals,
                  # the default AS WRITTEN, so the schema editor can
                  # rebuild the line it came from without inventing one
                  "default_text": field.default_text}
@@ -642,7 +671,9 @@ class ValuePresets:
                                "name: type [range] [= default]. Types are "
                                "text, int, float, bool, 'choice a, b, c', "
                                "and @Node.input to borrow another node's "
-                               "dropdown. Lines starting with # are "
+                               "dropdown. A float range sets the decimals "
+                               "shown: 0..1.0 one, 0..1.00 two, 0..1 two. "
+                               "Lines starting with # are "
                                "ignored. A default follows '=', so a "
                                "choice cannot contain one.",
                 }),

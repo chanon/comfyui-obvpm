@@ -146,12 +146,15 @@ function fieldWidget(node, field, value, onChange) {
         coerced = !!value;
         w = node.addWidget("toggle", shown, coerced, set);
     } else if (field.kind === "int" || field.kind === "float") {
-        const step = field.kind === "int" ? 1 : 0.01;
+        // a float shows and steps by the decimals its range was
+        // written with (0..1.0 one, 0..1.00 two; 0..1 two), per server
+        const decimals = field.kind === "int" ? 0 : (field.decimals ?? 2);
+        const step = Math.pow(10, -decimals);
         coerced = Number(value ?? 0);
         w = node.addWidget("number", shown, coerced, set, {
             min: field.lo ?? -Infinity, max: field.hi ?? Infinity,
             step: step * 10,            // litegraph's step is /10 on drag
-            precision: field.kind === "int" ? 0 : 3,
+            precision: decimals,
             round: field.kind === "int" ? 1 : false,
         });
     } else {
@@ -597,7 +600,7 @@ function rowOf(field) {
         ref: field.ref ?? "",
         arg: field.ref ? ""
             : field.kind === "choice" ? (field.choices ?? []).join(", ")
-            : ranged ? (field.lo ?? "") + ".." + (field.hi ?? "")
+            : ranged ? (field.span || (field.lo ?? "") + ".." + (field.hi ?? ""))
             : "",
         def: field.default_text ?? "",
     };
