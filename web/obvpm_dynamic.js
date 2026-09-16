@@ -603,6 +603,12 @@ function syncAutoSockets(node, prefix, max, listName, preferTitle) {
         if (re.test(slot.name) && slot.link == null) removeInputAt(node, i);
     }
     const slots = () => (node.inputs ?? []).filter((s) => re.test(s.name));
+    // Hard upper bound: trim any excess slots (e.g. from rapid successive
+    // calls racing the removal above) before possibly adding a new one, so
+    // the count can never overshoot max even transiently.
+    while (slots().length > max) {
+        removeInputAt(node, node.inputs.indexOf(slots()[slots().length - 1]));
+    }
     if (slots().length < max) {
         node.addInput(`${prefix}${slots().length + 1}`, "*",
                       { ...OPTIONAL_SLOT });
