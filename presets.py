@@ -144,12 +144,18 @@ class Field:
         options = self.choices()
         if options is not None:
             text = "" if value is None else str(value)
-            if text not in options:
-                raise ValueError(
-                    "Value Presets: %s %r for field %r is not one of its "
-                    "%d choices%s." % (what, text, self.name, len(options),
-                                       _near(text, options)))
-            return text
+            for option in options:
+                # compared as text -- a preset arrives as JSON, where a
+                # borrowed numeric choice may have become "8" -- but the
+                # value handed on is the option AS THE NODE DECLARED IT,
+                # 8 and not "8", which is the only form core's validator
+                # and the node's own arithmetic accept
+                if text == str(option):
+                    return option
+            raise ValueError(
+                "Value Presets: %s %r for field %r is not one of its "
+                "%d choices%s." % (what, text, self.name, len(options),
+                                   _near(text, options)))
         if self.kind == "bool":
             return _as_bool(value, self.name, what)
         if self.kind in ("int", "float"):
@@ -210,6 +216,49 @@ def _as_bool(value, name, what):
         % (what, value, name))
 
 
+def _combo_options(entry):
+    """The choices an INPUT_TYPES entry offers, as text, or None.
+
+    TWO DECLARATIONS MEAN THE SAME THING. A V1 node writes the list in
+    slot 0 -- ("euler", "heun") as (["euler", "heun"], {...}). A V3 node
+    declares a Combo input instead, and core converts it back for V1 in
+    `add_to_dict_v1` by putting the io_type in slot 0 and moving the
+    list into the options dict -- ("COMBO", {"options": [...]}). On a
+    current install more than half of every dropdown is the second
+    shape, so reading slot 0 alone makes those inputs look like plain
+    sockets with nothing to borrow.
+
+    A remote combo names a route rather than a list (LoadImageOutput's
+    image is the one on a stock install): there is no list to read here
+    and it reads as None, the same as a non-dropdown.
+    """
+    if not isinstance(entry, (list, tuple)) or not entry:
+        return None
+    first = entry[0]
+    if isinstance(first, (list, tuple)):
+        options = first
+    elif first == "COMBO":
+        extra = entry[1] if len(entry) > 1 and isinstance(entry[1], dict) else {}
+        options = extra.get("options")
+        if not isinstance(options, (list, tuple)):
+            return None
+    else:
+        return None
+    # A combo may list numbers -- CreateVideo's bit_depth is 'auto', 8,
+    # 10. Each option is kept AS DECLARED rather than turned into text,
+    # because core validates a queued value with `val not in options`
+    # and coerces nothing on the way: hand it "8" where the node wrote
+    # 8 and the prompt is refused with "Value not in list", and the
+    # node's own `bit_depth >= 10` would raise on a string besides.
+    # Matching by text happens in `coerce`, which returns the option
+    # itself. Anything but a number or a string is not a value a preset
+    # could carry, and such a list is refused whole rather than thinned.
+    for option in options:
+        if isinstance(option, bool) or not isinstance(option, (str, int, float)):
+            return None
+    return list(options)
+
+
 def ref_choices(ref, field_name, descriptors=None):
     """The live options of another node's input, named `Node.input`.
 
@@ -261,15 +310,15 @@ def ref_choices(ref, field_name, descriptors=None):
         entry = (spec.get(section) or {}).get(input_name)
         if entry is None:
             continue
-        options = entry[0] if isinstance(entry, (list, tuple)) else entry
-        if isinstance(options, (list, tuple)):
+        options = _combo_options(entry)
+        if options is not None:
             if len(options) > MAX_CHOICES:
                 raise ValueError("Value Presets: dropdown exceeds 8192 choices")
-            if not all(isinstance(o, str) and len(o) <= MAX_TEXT for o in options):
+            if not all(len(str(o)) <= MAX_TEXT for o in options):
                 raise ValueError("Value Presets: dropdown choices must be strings of at most 4096 characters")
-            if sum(len(o.encode("utf-8")) for o in options) > 256 * 1024:
+            if sum(len(str(o).encode("utf-8")) for o in options) > 256 * 1024:
                 raise ValueError("Value Presets: dropdown exceeds 256 KiB")
-            return list(options)
+            return options
         raise ValueError(
             "Value Presets: field %r borrows %s.%s, but that input is not "
             "a dropdown -- only inputs offering a list of choices can be "
@@ -586,11 +635,9 @@ def catalogue():
             for input_name, entry in (spec.get(section) or {}).items():
                 if mine and _hidden_from_picker(node_name, input_name):
                     continue
-                options = entry[0] if isinstance(entry, (list, tuple)) \
-                    else entry
-                if not (isinstance(options, (list, tuple)) and options
-                        and len(options) <= MAX_CHOICES
-                        and all(isinstance(o, str) and len(o) <= MAX_TEXT for o in options)):
+                options = _combo_options(entry)
+                if not (options and len(options) <= MAX_CHOICES
+                        and all(len(str(o)) <= MAX_TEXT for o in options)):
                     continue
                 item = {
                     "node": node_name, "input": input_name,

@@ -6,8 +6,10 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 ## Updates
 
-### Latest HEAD
+### 0.2.2 (2026-09-16)
 
+- Value Presets: fields that borrow another node's dropdown now work with nodes written for ComfyUI's newer node API (V3 Combos ), which declares its choices in a different place. On a current install more than half of all dropdowns are of that kind -- `KSamplerSelect`'s `sampler_name` and `BasicScheduler`'s `scheduler` among them -- and until now they were missing from the field type picker and could not be borrowed at all.
+- Value Presets: a borrowed dropdown whose choices are numbers, such as `CreateVideo`'s `bit_depth`, now passes its value on as a number, which is what the node it came from expects.
 - Value Presets: hovering a field whose value is cut off, such as a long file name in a narrow node, shows the full value.
 
 ### 0.2.1 (2026-09-15)

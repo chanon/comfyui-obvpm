@@ -393,6 +393,70 @@ if __name__ == "__main__":
 class PackGroupingTests(unittest.TestCase):
     """The type picker groups by pack: this pack, then core, then others."""
 
+    def test_v3_combos_are_borrowable(self):
+        """A V3 node hides its choices one level deeper than a V1 one.
+
+        Core converts a V3 Combo input back to the V1 declaration by
+        writing ("COMBO", {"options": [...]}) -- the io_type in slot 0,
+        the list in the options dict. Reading slot 0 alone (what this
+        node did until now) sees the string "COMBO" and concludes the
+        input is not a dropdown at all, which on a current install is
+        more than half of every dropdown there is, KSamplerSelect's
+        sampler_name among them.
+        """
+        registry.NODE_CLASS_MAPPINGS.clear()
+        v3 = ("COMBO", {"options": ["euler", "heun"], "default": "heun"})
+
+        class Sampler:
+            @classmethod
+            def INPUT_TYPES(cls):
+                return {"required": {"sampler_name": v3},
+                        "optional": {"bit_depth": ("COMBO", {"options": ["auto", 8, 10]}),
+                                     # a remote combo names a route, not a list
+                                     "image": ("COMBO", {"remote": {"route": "/x"}}),
+                                     "pixels": ("IMAGE",)}}
+        registry.NODE_CLASS_MAPPINGS["Sampler"] = Sampler
+        try:
+            self.assertEqual(presets.ref_choices("Sampler.sampler_name", "f"),
+                             ["euler", "heun"])
+            # numbers are legal options and stay as the node wrote them
+            self.assertEqual(presets.ref_choices("Sampler.bit_depth", "f"),
+                             ["auto", 8, 10])
+            # a preset arrives as JSON, so a borrowed number may come back
+            # as text -- it matches by text but is handed on as declared,
+            # because core validates with `val not in options` and coerces
+            # nothing, and the node's own `bit_depth >= 10` needs a number
+            values, _ = presets.resolve("depth: @Sampler.bit_depth", '{"depth": "8"}')
+            self.assertEqual(values, {"depth": 8})
+            self.assertIsInstance(values["depth"], int)
+            self.assertEqual(presets.resolve("depth: @Sampler.bit_depth", "{}")[0],
+                             {"depth": "auto"})
+            self.assertEqual(presets.describe("x: @Sampler.sampler_name")[0]["default"],
+                             "euler")
+            for input_name in ("image", "pixels"):
+                with self.assertRaisesRegex(ValueError, "not a dropdown"):
+                    presets.ref_choices("Sampler.%s" % input_name, "f")
+            listed = {(t["node"], t["input"]): t for t in presets.catalogue()}
+            self.assertEqual(listed[("Sampler", "sampler_name")]["count"], 2)
+            self.assertEqual(listed[("Sampler", "bit_depth")]["sample"],
+                             ["auto", 8, 10])
+            self.assertNotIn(("Sampler", "image"), listed)
+            self.assertNotIn(("Sampler", "pixels"), listed)
+        finally:
+            registry.NODE_CLASS_MAPPINGS.clear()
+
+    def test_combo_options_reads_both_declarations(self):
+        read = presets._combo_options
+        self.assertEqual(read((["a", "b"], {"default": "a"})), ["a", "b"])
+        self.assertEqual(read(("COMBO", {"options": ["a", "b"]})), ["a", "b"])
+        self.assertEqual(read(("COMBO", {"options": [1, 2.5]})), [1, 2.5])
+        for entry in (("COMBO",), ("COMBO", {}), ("STRING", {"multiline": True}),
+                      ("MODEL",), (), None, "COMBO",
+                      # options a preset could not carry are refused whole
+                      ("COMBO", {"options": [{"a": 1}]}),
+                      ("COMBO", {"options": ["ok", True]})):
+            self.assertIsNone(read(entry), entry)
+
     def test_pack_of_reads_module_names_comfyui_uses(self):
         p = presets._pack_of
         self.assertEqual(p("nodes"), ("ComfyUI core", 1, False, True))
