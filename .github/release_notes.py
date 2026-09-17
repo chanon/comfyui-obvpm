@@ -58,11 +58,11 @@ def repo_url():
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    args = [a.strip() for a in sys.argv[1:] if a.strip() and not a.strip().startswith("--")]
     allow_missing = "--allow-missing" in sys.argv[1:]
-    if len(args) != 1 or not args[0].startswith("v"):
-        fail("usage: release_notes.py v<version> [--allow-missing]")
-    tag = args[0]
+    if len(args) != 1:
+        fail("usage: release_notes.py v<version> [--allow-missing] (got %r)" % (sys.argv[1:],))
+    tag = args[0] if args[0].startswith("v") else "v" + args[0]
     if git("rev-parse", "--verify", "--quiet", "refs/tags/" + tag).returncode:
         fail("tag %s does not exist" % tag)
 
@@ -94,7 +94,7 @@ def main():
     out = os.environ.get("GITHUB_OUTPUT")
     if out:
         with open(out, "a", encoding="utf-8") as f:
-            f.write("latest=%s\n" % latest)
+            f.write("tag=%s\nlatest=%s\n" % (tag, latest))
     else:
         print("release_notes: latest=%s" % latest, file=sys.stderr)
 
