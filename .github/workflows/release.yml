@@ -1,0 +1,41 @@
+name: Release on version tag
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.2.1 (runs this workflow from the chosen branch, for tags that predate it)"
+        required: true
+      allow_missing_notes:
+        description: "Release even if README.md has no section for this version"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build release notes
+        id: notes
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          ALLOW_MISSING: ${{ inputs.allow_missing_notes && '--allow-missing' || '' }}
+        run: python3 .github/release_notes.py "$TAG" $ALLOW_MISSING > notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          LATEST: ${{ steps.notes.outputs.latest }}
+        run: gh release create "$TAG" --title "${TAG#v}" --notes-file notes.md --verify-tag --latest="$LATEST"
