@@ -83,7 +83,7 @@ def main():
     else:
         link = "**Source**: %s/tree/%s" % (url, tag)
 
-    notes = body + "\n\n"
+    notes = "### Changes\n\n" + body + "\n\n"
     if dated:
         notes += "Released %s.\n\n" % dated
     notes += link + "\n"
