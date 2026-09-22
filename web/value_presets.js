@@ -59,14 +59,14 @@ function widget(node, name) {
     return (node.widgets ?? []).find((w) => w.name === name);
 }
 
-function hide(w) {
+function hide(w, hidden = true) {
     if (!w) return;
-    // both ways: the canvas renderer reads widget.hidden, the Vue one
-    // reads widget.options.hidden
-    w.hidden = true;
-    (w.options ??= {}).hidden = true;
+    // both ways: the canvas renderer reads widget.hidden (layout and
+    // drawing both skip it), the Vue one reads widget.options.hidden
+    w.hidden = hidden;
+    (w.options ??= {}).hidden = hidden;
     const el = w.element ?? w.inputEl;
-    if (el) el.style.display = "none";
+    if (el) el.style.display = hidden ? "none" : "";
 }
 
 function readJson(node, name) {
@@ -170,7 +170,11 @@ function fieldWidget(node, field, value, onChange) {
         // that quietly vanished would look like data loss.
         w.label = w.name;
     }
-    const baseTip = field.error || undefined;
+    // The schema's hint for the field, and the error if it has one --
+    // both are schema text, shown as text (the tooltip is rendered as
+    // text by the host, never as markup).
+    const baseTip = [field.error, field.hint].filter(Boolean).join("\n\n")
+        || undefined;
     // The full value on hover whenever the widget draws it cut off -- a
     // long file name in a narrow node. A getter, not a stored string: the
     // frontend reads widget.tooltip at hover time, and both the value and
@@ -181,6 +185,64 @@ function fieldWidget(node, field, value, onChange) {
         set: () => {},
     });
     return w;
+}
+
+/**
+ * Whether a field is shown, given the values on the node.
+ *
+ * The SAME rule presets.py's is_shown applies to the bundle: a field
+ * whose `when` does not hold is hidden, and so is one whose deciding
+ * field is itself hidden. Applied here to the parsed condition the
+ * server described, so the text is still read in one place; only this
+ * one comparison is repeated, and it is a lookup, not an expression.
+ */
+function isShown(field, fieldMap, values, shown) {
+    if (!field.when) return true;
+    const decider = fieldMap[field.when.field];
+    if (!decider) return true;          // the server refused the schema
+    if (!(shown[decider.name] ?? isShown(decider, fieldMap, values, shown))) {
+        return false;
+    }
+    const value = values[decider.name];
+    const text = typeof value === "boolean" ? (value ? "true" : "false")
+        : String(value ?? "");
+    return field.when.values.includes(text) !== !!field.when.not;
+}
+
+/**
+ * Hide and show the field widgets to match the values.
+ *
+ * On every change of a value, not only on a rebuild: the toggle that
+ * hides the LoRA picker is answered at once, and without rebuilding --
+ * the widgets keep their state, so the hidden value comes back when
+ * the toggle does. The node is re-sized to the widgets it shows, in
+ * both directions: addWidget only ever grows a node, so a row of
+ * hidden fields would otherwise leave a blank band under the buttons.
+ */
+function applyVisibility(node) {
+    const fieldMap = node.__obvpmFieldMap ?? {};
+    const values = readJson(node, VALUES);
+    const shown = Object.create(null);
+    for (const field of Object.values(fieldMap)) {
+        shown[field.name] = isShown(field, fieldMap, values, shown);
+    }
+    let moved = false;
+    for (const w of node.widgets ?? []) {
+        if (!w[MARK] || w.name === ROW_NAME) continue;
+        const field = w.name.replace(/ {2}⚠$/, "");
+        const hidden = shown[field] === false;
+        // either flag: the options object can outlive a rebuild with
+        // the widget's state while the instance comes back fresh
+        if (!!(w.hidden || w.options?.hidden) !== hidden) {
+            hide(w, hidden);
+            moved = true;
+        }
+    }
+    if (moved && typeof node.computeSize === "function" && node.size) {
+        node.setSize?.([node.size[0], node.computeSize()[1]]);
+        notifyVue(node);
+    }
+    return shown;
 }
 
 /**
@@ -442,6 +504,8 @@ async function rebuild(node, force) {
         // difference instead -- and never rebuilds, because replacing
         // the widget being typed into would take the caret with it.
         refreshState(node);
+        // ... and the fields this one decides follow it at once
+        applyVisibility(node);
     };
 
     for (const field of fields) {
@@ -463,6 +527,7 @@ async function rebuild(node, force) {
     if (answer.error) noteError(node, answer.error);
     addButtonRow(node);
     refreshState(node);
+    applyVisibility(node);
     notifyVue(node);
 }
 
@@ -610,6 +675,8 @@ function rowOf(field) {
             : ranged ? (field.span || (field.lo ?? "") + ".." + (field.hi ?? ""))
             : "",
         def: field.default_text ?? "",
+        when: field.when_text ?? "",
+        hint: field.hint ?? "",
     };
 }
 
@@ -623,7 +690,33 @@ function lineOf(row) {
             ? (arg ? row.kind + " " + arg : row.kind)
             : row.kind;
     const def = String(row.def ?? "").trim();
-    return name + ": " + spec + (def ? " = " + def : "");
+    // the tails in the order the parser takes them off: the hint LAST,
+    // so it may say anything
+    const when = String(row.when ?? "").trim().replace(/^when\s+/i, "");
+    const hint = String(row.hint ?? "").trim();
+    return name + ": " + spec + (def ? " = " + def : "")
+        + (when ? " when " + when : "") + (hint ? " # " + hint : "");
+}
+
+/** The schema text the editor's rows stand for. */
+function schemaOf(rows) {
+    return rows.map(lineOf).join("\n") + "\n";
+}
+
+/**
+ * Read the clipboard, or ask. `readText` needs a permission some
+ * browsers never grant (Firefox), and a rejected promise there would
+ * make the button do nothing at all -- so the fallback is a box to
+ * paste into, which also lets a schema be typed or edited on the way in.
+ */
+async function clipboardText() {
+    try {
+        const text = await navigator.clipboard?.readText?.();
+        if (typeof text === "string") return text;
+    } catch (err) {
+        /* not granted: ask below */
+    }
+    return null;
 }
 
 function typeLabel(row) {
@@ -641,9 +734,23 @@ async function openSchemaEditor(node) {
     const answer = await describe(widget(node, SCHEMA)?.value ?? "");
     const rows = (answer.fields ?? []).map(rowOf);
 
-    const { overlay, panel, close } = openOverlay();
+    // wider than the kit's default: a row is name, type, range,
+    // default, condition and hint, and wrapping them would lose the
+    // column-per-part reading that makes the dialog a table
+    const { overlay, panel, close } = openOverlay("min(1180px, 96vw)");
 
     const title = el("div", { font: TITLE }, "Schema");
+    const columns = el("div", {
+        display: "flex", gap: "5px", color: DIM, font: "12px sans-serif",
+        padding: "0 2px",
+    });
+    for (const [label, width] of [["", "58px"], ["name", "150px"],
+                                  ["type", "200px"], ["range / choices", "160px"],
+                                  ["default", "110px"], ["shown when", "160px"],
+                                  ["hint", "160px"]]) {
+        columns.appendChild(el("div", { flex: "0 0 " + width,
+                                        overflow: "hidden" }, label));
+    }
     const list = el("div", {
         display: "flex", flexDirection: "column", gap: "4px",
         overflowY: "auto", padding: "4px 2px",
@@ -674,22 +781,35 @@ async function openSchemaEditor(node) {
         line.append(
             pushButton("▲", () => move(-1), { padding: "1px 5px" }),
             pushButton("▼", () => move(1), { padding: "1px 5px" }),
-            textBox(row.name, "name", (v) => { row.name = v; }, "175px"),
+            textBox(row.name, "name", (v) => { row.name = v; }, "150px"),
             pushButton(typeLabel(row), () => openTypePicker(row, draw),
-                       { flex: "0 0 230px", overflow: "hidden",
+                       { flex: "0 0 200px", overflow: "hidden",
                          textOverflow: "ellipsis", textAlign: "left" }),
         );
         const hint = argHint(row);
         if (hint) {
             line.appendChild(textBox(row.arg, hint, (v) => { row.arg = v; },
-                                     "190px"));
+                                     "160px"));
         } else {
             // the column is held open, so the rows do not jag as types
             // change under each other
-            line.appendChild(el("div", { flex: "0 0 190px" }));
+            line.appendChild(el("div", { flex: "0 0 160px" }));
         }
+        // The condition is typed, not picked: `field = a, b` is short,
+        // the server checks it on Apply and names the line when it is
+        // wrong, and a three-part picker (field, operator, values)
+        // would be the one part of this dialog wider than the text it
+        // stands for.
+        const when = textBox(row.when, "field = value", (v) => { row.when = v; },
+                             "160px");
+        when.title = "Show this field only while a choice or true/false "
+            + "field above it holds one of these values: turbo = on, or "
+            + "turbo != off, or mode = a, b. Hidden, its value on the "
+            + "bundle is None.";
         line.append(
-            textBox(row.def, "default", (v) => { row.def = v; }, "130px"),
+            textBox(row.def, "default", (v) => { row.def = v; }, "110px"),
+            when,
+            textBox(row.hint, "hint", (v) => { row.hint = v; }, "160px"),
             pushButton("✕", () => { rows.splice(index, 1); draw(); },
                        { padding: "1px 6px" }),
         );
@@ -822,14 +942,100 @@ async function openSchemaEditor(node) {
         display: "flex", gap: "6px", justifyContent: "flex-end",
         paddingTop: "4px",
     });
+    const note = el("div", { color: DIM, alignSelf: "center",
+                             marginRight: "auto" });
+    const say = (text) => { note.textContent = text; };
+
+    /**
+     * Replace the rows with a pasted schema -- IN THE DIALOG. Nothing
+     * reaches the node until Apply, so a paste can still be cancelled,
+     * and it goes through the server first like every other edit: a
+     * schema that does not parse is reported, not loaded half-way.
+     */
+    async function pasteSchema(text) {
+        const check = await describe(text);
+        if (check.error) {
+            error.textContent = check.error;
+            error.style.display = "block";
+            return;
+        }
+        error.style.display = "none";
+        // fresh identities: nothing here is a rename of a row that was
+        // open, so no stored value is carried onto a pasted name
+        rows.splice(0, rows.length,
+                    ...(check.fields ?? []).map((f) => ({ ...rowOf(f), was: "" })));
+        draw();
+        say((check.fields ?? []).length + " field(s) pasted -- Apply to keep them.");
+    }
+
+    /** The paste box: pre-filled from the clipboard when that is allowed. */
+    function openPasteBox(initial) {
+        const pop = el("div", {
+            position: "fixed", inset: "0", zIndex: "10001",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.35)",
+        });
+        const box = el("div", {
+            background: PANEL, border: "1px solid " + EDGE,
+            borderRadius: "8px", padding: "12px", width: "min(640px, 92vw)",
+            display: "flex", flexDirection: "column", gap: "6px",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.5)", color: INK, font: TEXT,
+        });
+        const area = el("textarea", {
+            background: FILL, color: INK, border: "1px solid " + EDGE,
+            borderRadius: "4px", padding: "6px 8px", font: "13px monospace",
+            minHeight: "220px", resize: "vertical", boxSizing: "border-box",
+        });
+        area.value = initial ?? "";
+        area.placeholder = "name: type [range] [= default] [when field = value] [# hint]";
+        const buttons = el("div", { display: "flex", gap: "6px",
+                                    justifyContent: "flex-end" });
+        buttons.append(
+            pushButton("Cancel", () => pop.remove()),
+            pushButton("Use this schema", async () => {
+                await pasteSchema(area.value);
+                if (error.style.display === "none") pop.remove();
+            }, { fontWeight: "600" }));
+        box.append(el("div", { font: TITLE }, "Paste a schema"), area, buttons);
+        pop.appendChild(box);
+        pop.addEventListener("mousedown", (ev) => {
+            if (ev.target === pop) pop.remove();
+        });
+        overlay.appendChild(pop);
+        area.focus();
+    }
+
+    const copyButton = pushButton("copy", async () => {
+        const text = schemaOf(rows);
+        try {
+            await navigator.clipboard.writeText(text);
+            say("Schema copied (" + rows.length + " field(s)).");
+        } catch (err) {
+            // no clipboard here (an http page, a denied permission):
+            // show the text instead, so Ctrl+C still gets it
+            openPasteBox(text);
+        }
+    });
+    copyButton.title = "Copy the schema as text.";
+    const pasteButton = pushButton("paste", async () => {
+        openPasteBox(await clipboardText() ?? "");
+    });
+    pasteButton.title = "Replace these fields with a schema from the "
+        + "clipboard. Nothing changes on the node until Apply.";
+
     footer.append(
         pushButton("+ add field", () => {
-            rows.push({ name: "", kind: "text", ref: "", arg: "", def: "" });
+            rows.push({ name: "", kind: "text", ref: "", arg: "", def: "",
+                        when: "", hint: "" });
             draw();
-        }, { marginRight: "auto" }),
+        }),
+        // The schema as TEXT, which is what travels: paste it into
+        // another node of this kind, a note, or a chat. Copied from the
+        // rows as they stand, so an edit in progress goes with it.
+        copyButton, pasteButton, note,
         pushButton("Cancel", close),
         pushButton("Apply", async () => {
-            const text = rows.map(lineOf).join("\n") + "\n";
+            const text = schemaOf(rows);
             // Checked by the SERVER before it lands. The dialog cannot
             // decide for itself whether a schema parses without becoming
             // a second parser, which is the thing this node exists to
@@ -857,7 +1063,7 @@ async function openSchemaEditor(node) {
         }, { fontWeight: "600" }),
     );
 
-    panel.append(title, list, error, footer);
+    panel.append(title, columns, list, error, footer);
     draw();
     document.body.appendChild(overlay);
 }

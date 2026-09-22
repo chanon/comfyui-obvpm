@@ -71,7 +71,7 @@ FALSE_WORDS = ("false", "0", "no", "off")
 
 _MISSING = object()
 
-DEFAULT_SCHEMA = """# one field per line:  name: type [range] [= default]
+DEFAULT_SCHEMA = """# one field per line:  name: type [range] [= default] [when field = value] [# hint]
 # types: text | int | float | bool | choice a, b, c | @Node.input
 steps: int 1..200 = 20
 cfg: float 0..100 = 5.0
@@ -88,11 +88,41 @@ def _fail(line_no, line, why):
         "Value Presets: schema line %d (%r) %s" % (line_no, line, why))
 
 
+class When:
+    """`when field = a, b` / `when field != a, b`: the one condition a
+    field may carry.
+
+    A LOOKUP, not an expression. It names a choice or bool field
+    declared above and lists the values that show this one; the only
+    operators are = and !=. That is all a settings panel needs (a LoRA
+    picker that appears once the loader is on), and it keeps the rule
+    the docstring at the top of this file states: schema text arrives
+    inside shared workflows and is only ever read as data.
+    """
+
+    def __init__(self, field, negate, values, text):
+        self.field = field
+        self.negate = negate
+        self.values = values
+        # AS WRITTEN (normalised), so the schema editor hands it back
+        self.text = text
+
+    def holds(self, value):
+        """Whether `value` -- the deciding field's resolved value --
+        shows the field carrying this condition."""
+        if isinstance(value, bool):
+            text = "true" if value else "false"
+        else:
+            text = str(value)
+        return (text in self.values) != self.negate
+
+
 class Field:
     """One line of the schema: a name, a type, and how to check a value."""
 
     def __init__(self, name, kind, default_text="", choices=None,
-                 ref=None, lo=None, hi=None, span_text="", decimals=None):
+                 ref=None, lo=None, hi=None, span_text="", decimals=None,
+                 when=None, hint=""):
         self.name = name
         self.kind = kind
         self.default_text = default_text
@@ -106,6 +136,10 @@ class Field:
         # how many decimals a float shows and steps by: as many as the
         # range was written with, two when it names none
         self.decimals = decimals
+        # `when ...`: shown (and emitted) only while it holds -- see When
+        self.when = when
+        # `# ...` after the type: what the widget says on hover
+        self.hint = hint
 
     # ---------------------------------------------------------- choices
 
@@ -357,8 +391,84 @@ def parse_schema(text):
         if name in seen:
             _fail(number, line, "repeats the field name %r" % name)
         seen.add(name)
-        fields.append(_parse_type(number, line, name, rest.strip()))
+        spec, when_text, hint = _split_tail(rest.strip())
+        field = _parse_type(number, line, name, spec)
+        if when_text is not None:
+            field.when = _parse_when(number, line, name, when_text, fields)
+        field.hint = hint
+        fields.append(field)
     return fields
+
+
+# a line's optional tails: ` when field = a, b` and ` # a hint`, in
+# that order, each introduced by whitespace so a name like `a#b` or a
+# choice called `when` is left alone
+_HINT_AT = re.compile(r"\s#")
+_WHEN_AT = re.compile(r"\swhen\s")
+
+
+def _split_tail(rest):
+    """(type spec, when text or None, hint) from everything after the ':'.
+
+    The hint comes off first, at the FIRST ` #`, so it may say anything
+    -- including 'when'. What is left is split at the first ` when `.
+    A default therefore cannot contain ' #' or ' when '; the syntax
+    line in DEFAULT_SCHEMA says so by showing the order.
+    """
+    hint = ""
+    at = _HINT_AT.search(rest)
+    if at:
+        hint = rest[at.end():].strip()
+        rest = rest[:at.start()].rstrip()
+    when_text = None
+    at = _WHEN_AT.search(rest)
+    if at:
+        when_text = rest[at.end():].strip()
+        rest = rest[:at.start()].rstrip()
+    return rest, when_text, hint
+
+
+_WHEN_SHAPE = re.compile(r"^(.+?)\s*(!=|=)\s*(.*)$")
+
+
+def _parse_when(number, line, name, text, above):
+    """A `when` clause checked against the fields declared before it."""
+    shape = _WHEN_SHAPE.match(text)
+    if not shape or not shape.group(3).strip():
+        _fail(number, line, "has a 'when' that is not written  "
+              "when field = value  or  when field != value, other")
+    deciding, op, listed = shape.groups()
+    deciding = deciding.strip()
+    if deciding == name:
+        _fail(number, line, "depends on itself")
+    target = next((f for f in above if f.name == deciding), None)
+    if target is None:
+        _fail(number, line, "depends on %r, which is not a field declared "
+              "above it" % deciding)
+    if target.kind not in ("choice", "bool"):
+        _fail(number, line, "depends on %r, which is %s -- only a choice "
+              "or bool field can decide whether another is shown"
+              % (deciding, {"int": "a whole number", "float": "a number"}
+                 .get(target.kind, "text")))
+    values = [v.strip() for v in listed.split(",") if v.strip()]
+    if target.kind == "bool":
+        try:
+            values = ["true" if _as_bool(v, deciding, "when") else "false"
+                      for v in values]
+        except ValueError:
+            _fail(number, line, "compares %r, a bool, with something that "
+                  "is not true or false" % deciding)
+    elif target._choices is not None:
+        # an explicit list can be checked now; a borrowed one is read
+        # live and is checked when the node runs
+        known = [str(c) for c in target._choices]
+        odd = [v for v in values if v not in known]
+        if odd:
+            _fail(number, line, "compares %r with %s, which is not one of "
+                  "its choices%s" % (deciding, ", ".join(repr(v) for v in odd),
+                                     _near(odd[0], known)))
+    return When(deciding, op == "!=", values,
+                "%s %s %s" % (deciding, op, ", ".join(values)))
 
 
 def _parse_type(number, line, name, rest):
@@ -483,7 +593,18 @@ def resolve(schema, values, presets=None, preset=CUSTOM):
     # that helps.
     library = load_store(presets, "presets") if presets is not None else {}
     packed = {}
+    shown = {}
     for field in fields:
+        # A field whose condition does not hold is None on the bundle,
+        # WHATEVER IS STORED -- the store keeps the value so it comes
+        # back when the condition holds again, but a hidden turbo LoRA
+        # must not be applied because a name was still sitting in the
+        # JSON. Not coerced either: a file that has since been deleted
+        # is no reason to refuse a run that was not going to use it.
+        shown[field.name] = is_shown(field, shown, packed)
+        if not shown[field.name]:
+            packed[field.name] = None
+            continue
         held = stored.get(field.name, _MISSING)
         packed[field.name] = (field.default() if held is _MISSING
                               else field.coerce(held))
@@ -493,11 +614,29 @@ def resolve(schema, values, presets=None, preset=CUSTOM):
         # what a name-keyed store is supposed to survive
         _LOG.info("Value Presets: ignoring stored value(s) for %s, which "
                   "the schema no longer has", ", ".join(sorted(extra)))
-    _check_label(packed, library, preset, fields)
+    _check_label(packed, library, preset, fields, shown)
     return packed, fields
 
 
-def _check_label(packed, library, preset, fields=()):
+def is_shown(field, shown, packed):
+    """Whether `field` is shown, given the fields resolved before it.
+
+    `shown` and `packed` cover the fields above it, which is where its
+    deciding field must be. A field decided by one that is itself
+    hidden is hidden too: what nobody can see cannot decide anything.
+    The browser applies the same rule to the widgets it built (see
+    web/value_presets.js isShown), from the condition this module
+    parsed and described -- the rule lives in two places, the parser
+    in one.
+    """
+    if field.when is None:
+        return True
+    if not shown.get(field.when.field, False):
+        return False
+    return field.when.holds(packed[field.when.field])
+
+
+def _check_label(packed, library, preset, fields=(), shown=None):
     name = str(preset or "").strip()
     if not name or name == CUSTOM:
         return
@@ -506,11 +645,12 @@ def _check_label(packed, library, preset, fields=()):
         return
     # Over the schema's fields, as the UI compares: a field the preset
     # was saved without is taken at its default, so a new field moved
-    # off its default counts as a change from the preset.
+    # off its default counts as a change from the preset. A hidden
+    # field is None here whatever the preset holds, so it is skipped.
     differs = []
     for field in fields:
         key = field.name
-        if key not in packed:
+        if key not in packed or (shown is not None and not shown.get(key)):
             continue
         if key in saved:
             expected = saved[key]
@@ -554,7 +694,14 @@ def describe(schema):
                  "span": field.span_text, "decimals": field.decimals,
                  # the default AS WRITTEN, so the schema editor can
                  # rebuild the line it came from without inventing one
-                 "default_text": field.default_text}
+                 "default_text": field.default_text,
+                 "hint": field.hint,
+                 # the condition parsed, for the widgets to apply, and
+                 # as written, for the schema editor to hand back
+                 "when": None if field.when is None else {
+                     "field": field.when.field, "not": field.when.negate,
+                     "values": list(field.when.values)},
+                 "when_text": "" if field.when is None else field.when.text}
         try:
             if field.ref is not None:
                 field._choices = ref_choices(field.ref, field.name, descriptors)
@@ -700,8 +847,10 @@ class ValuePresets:
         "arrives at its default, a deleted one is ignored, and reordering "
         "changes nothing. A field can borrow another node's dropdown "
         "(@LoraName.lora_name) and then tracks that list instead of a "
-        "copy of it. Outputs an ordinary bundle -- Unbundle it (hide "
-        "fields in its config to take a subset)."
+        "copy of it, can be shown only while another field holds a "
+        "value ('when turbo = on'; hidden, it is None on the bundle), "
+        "and can carry a hint ('# ...'). Outputs an ordinary bundle -- "
+        "Unbundle it (hide fields in its config to take a subset)."
     )
     OUTPUT_TOOLTIPS = (
         "The fields as one value, keyed by name, in schema order.",
@@ -722,7 +871,13 @@ class ValuePresets:
                                "shown: 0..1.0 one, 0..1.00 two, 0..1 two. "
                                "Lines starting with # are "
                                "ignored. A default follows '=', so a "
-                               "choice cannot contain one.",
+                               "choice cannot contain one. After the "
+                               "default, 'when other_field = a, b' (or "
+                               "!=) shows this field only while a choice "
+                               "or bool field above it holds one of those "
+                               "values; otherwise it is hidden and its "
+                               "value on the bundle is None. Last, "
+                               "' # text' is the hint shown on hover.",
                 }),
                 "preset": ("STRING", {
                     "default": CUSTOM,

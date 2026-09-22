@@ -11,6 +11,9 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 ### Latest HEAD
 
 - Load Images & Compose: an empty node with no images now outputs `None` instead of raising an error. So you don't have to ctrl-b disable empty ones when eg. using one as a reference image input to MiniMax H3.
+- Value Presets: a field can now depend on another one. Add `when turbo_loader != off` (or `when spectrum = true`, or `when mode = a, b` for any of several values) after a field's default, and the field is only shown while the choice or true/false field named holds one of those values. While hidden, its value on the bundle is `None` -- so a LoRA name sitting behind an "off" switch is never applied, and its widget no longer suggests that it is. The value is kept and comes back when the field does.
+- Value Presets: a field can carry a hint. Put `# any text` at the end of its schema line and it shows when hovering over the widget.
+- Value Presets: the schema editor has a `copy` button that copies the schema as text, and a `paste` button that replaces the fields with a pasted one (checked first; nothing changes on the node until Apply). The editor also has columns for the condition and the hint.
 
 ### 0.2.2 (2026-09-16)
 
@@ -224,7 +227,20 @@ Output: `bundle` — an ordinary bundle, so Unbundle works on it unchanged (hide
 - **reorder** them → nothing moves at all;
 - **rename** one in the schema editor → its stored value is carried to the new name, in the node's own values *and in every preset*.
 
-**Editing the fields.** Press **edit schema…** for a row per field — name, type, default — with ▲▼ to reorder and a searchable type picker. The picker offers the basic types and then **every dropdown on this install**
+**Editing the fields.** Press **schema** for a row per field — name, type, range or choices, default, condition, hint — with ▲▼ to reorder and a searchable type picker. The picker offers the basic types and then **every dropdown on this install**. **copy** puts the schema on the clipboard as text and **paste** replaces the fields with one from the clipboard (the node is only changed when you press Apply).
+
+**The schema text.** One field per line: `name: type [range or choices] [= default] [when field = value] [# hint]`
+
+```
+turbo_loader: choice off, normal, larryvrh = off   # which loader applies the turbo LoRA
+turbo_lora: @LoraName (obvpm).lora_name when turbo_loader != off
+turbo_strength: float 0..1.00 = 1.0 when turbo_loader != off
+steps: int 1..200 = 20
+```
+
+- **Types** are `text`, `int`, `float`, `bool`, `choice a, b, c`, and `@Node.input` to borrow another node's dropdown, which then tracks that list instead of a copy of it. A float range sets the decimals shown (`0..1.0` one, `0..1.00` two).
+- **`when field = value`** (or `!=`, and `a, b` for any of several) shows the field only while a `choice` or `bool` field **declared above it** holds one of those values. While hidden, the field's value **on the bundle is `None`** — whatever is stored — so nothing downstream acts on a setting the node is not showing. The stored value is kept and returns with the field. A field whose deciding field is itself hidden is hidden too.
+- **`# hint`** at the end of the line is shown when hovering over the field. (A `#` at the *start* of a line is a comment.)
 
 <img src="assets/value-presets-modified.webp" title="" alt="A modified Value Presets selection with its changed field marked" width="539">
 
