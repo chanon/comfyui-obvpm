@@ -8,6 +8,10 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 **Also check out my new Timeline node:**  https://github.com/obvpm/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Value Presets: the schema editor's `copy` and `paste` buttons are replaced by one **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows (the node is only changed when you press Apply).
+
 ### 0.2.3 (2026-09-22)
 
 - Load Images & Compose: an empty node with no images now outputs `None` instead of raising an error. So you don't have to ctrl-b disable empty ones when eg. using one as a reference image input to MiniMax H3.
@@ -228,7 +232,7 @@ Output: `bundle` — an ordinary bundle, so Unbundle works on it unchanged (hide
 - **reorder** them → nothing moves at all;
 - **rename** one in the schema editor → its stored value is carried to the new name, in the node's own values *and in every preset*.
 
-**Editing the fields.** Press **schema** for a row per field — name, type, range or choices, default, condition, hint — with ▲▼ to reorder and a searchable type picker. The picker offers the basic types and then **every dropdown on this install**. **copy** puts the schema on the clipboard as text and **paste** replaces the fields with one from the clipboard (the node is only changed when you press Apply).
+**Editing the fields.** Press **schema** for a row per field — name, type, range or choices, default, condition, hint — with ▲▼ to reorder and a searchable type picker. The picker offers the basic types and then **every dropdown on this install**. **edit as text** opens the schema as plain text, for pasting one in, copying this one out, or writing several lines at once; *Use this schema* checks it and replaces the rows (the node is only changed when you press Apply).
 
 **The schema text.** One field per line: `name: type [range or choices] [= default] [when field = value] [# hint]`
 

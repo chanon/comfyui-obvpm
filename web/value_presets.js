@@ -703,22 +703,6 @@ function schemaOf(rows) {
     return rows.map(lineOf).join("\n") + "\n";
 }
 
-/**
- * Read the clipboard, or ask. `readText` needs a permission some
- * browsers never grant (Firefox), and a rejected promise there would
- * make the button do nothing at all -- so the fallback is a box to
- * paste into, which also lets a schema be typed or edited on the way in.
- */
-async function clipboardText() {
-    try {
-        const text = await navigator.clipboard?.readText?.();
-        if (typeof text === "string") return text;
-    } catch (err) {
-        /* not granted: ask below */
-    }
-    return null;
-}
-
 function typeLabel(row) {
     if (row.kind === "ref") return row.ref || "(pick a dropdown)";
     return (BASIC.find((b) => b.kind === row.kind) ?? {}).label ?? row.kind;
@@ -947,29 +931,35 @@ async function openSchemaEditor(node) {
     const say = (text) => { note.textContent = text; };
 
     /**
-     * Replace the rows with a pasted schema -- IN THE DIALOG. Nothing
-     * reaches the node until Apply, so a paste can still be cancelled,
+     * Replace the rows with schema TEXT -- IN THE DIALOG. Nothing
+     * reaches the node until Apply, so the edit can still be cancelled,
      * and it goes through the server first like every other edit: a
      * schema that does not parse is reported, not loaded half-way.
      */
-    async function pasteSchema(text) {
+    async function useText(text) {
         const check = await describe(text);
         if (check.error) {
             error.textContent = check.error;
             error.style.display = "block";
-            return;
+            return false;
         }
         error.style.display = "none";
         // fresh identities: nothing here is a rename of a row that was
-        // open, so no stored value is carried onto a pasted name
+        // open, so no stored value is carried onto a retyped name
         rows.splice(0, rows.length,
                     ...(check.fields ?? []).map((f) => ({ ...rowOf(f), was: "" })));
         draw();
-        say((check.fields ?? []).length + " field(s) pasted -- Apply to keep them.");
+        say((check.fields ?? []).length + " field(s) -- Apply to keep them.");
+        return true;
     }
 
-    /** The paste box: pre-filled from the clipboard when that is allowed. */
-    function openPasteBox(initial) {
+    /**
+     * The schema as text, editable. The rows are a view over this text
+     * (see the section comment above); this is the text itself, for
+     * what a row per field is bad at -- pasting a whole schema in,
+     * copying one out, or writing several lines at once.
+     */
+    function openTextEditor() {
         const pop = el("div", {
             position: "fixed", inset: "0", zIndex: "10001",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -977,26 +967,32 @@ async function openSchemaEditor(node) {
         });
         const box = el("div", {
             background: PANEL, border: "1px solid " + EDGE,
-            borderRadius: "8px", padding: "12px", width: "min(640px, 92vw)",
+            borderRadius: "8px", padding: "12px", width: "min(760px, 92vw)",
             display: "flex", flexDirection: "column", gap: "6px",
             boxShadow: "0 8px 40px rgba(0,0,0,0.5)", color: INK, font: TEXT,
         });
         const area = el("textarea", {
             background: FILL, color: INK, border: "1px solid " + EDGE,
             borderRadius: "4px", padding: "6px 8px", font: "13px monospace",
-            minHeight: "220px", resize: "vertical", boxSizing: "border-box",
+            minHeight: "260px", resize: "vertical", boxSizing: "border-box",
+            whiteSpace: "pre", overflowWrap: "normal", overflowX: "auto",
         });
-        area.value = initial ?? "";
+        area.value = schemaOf(rows);
         area.placeholder = "name: type [range] [= default] [when field = value] [# hint]";
+        area.spellcheck = false;
+        const legend = el("div", { color: DIM, font: "12px sans-serif" },
+            "One field per line: name: type [range or choices] [= default] "
+            + "[when field = value] [# hint]. Types: text, int, float, bool, "
+            + "choice a, b, c, @Node.input. Lines starting with # are comments.");
         const buttons = el("div", { display: "flex", gap: "6px",
                                     justifyContent: "flex-end" });
         buttons.append(
             pushButton("Cancel", () => pop.remove()),
             pushButton("Use this schema", async () => {
-                await pasteSchema(area.value);
-                if (error.style.display === "none") pop.remove();
+                if (await useText(area.value)) pop.remove();
             }, { fontWeight: "600" }));
-        box.append(el("div", { font: TITLE }, "Paste a schema"), area, buttons);
+        box.append(el("div", { font: TITLE }, "Schema as text"), legend, area,
+                   buttons);
         pop.appendChild(box);
         pop.addEventListener("mousedown", (ev) => {
             if (ev.target === pop) pop.remove();
@@ -1005,23 +1001,9 @@ async function openSchemaEditor(node) {
         area.focus();
     }
 
-    const copyButton = pushButton("copy", async () => {
-        const text = schemaOf(rows);
-        try {
-            await navigator.clipboard.writeText(text);
-            say("Schema copied (" + rows.length + " field(s)).");
-        } catch (err) {
-            // no clipboard here (an http page, a denied permission):
-            // show the text instead, so Ctrl+C still gets it
-            openPasteBox(text);
-        }
-    });
-    copyButton.title = "Copy the schema as text.";
-    const pasteButton = pushButton("paste", async () => {
-        openPasteBox(await clipboardText() ?? "");
-    });
-    pasteButton.title = "Replace these fields with a schema from the "
-        + "clipboard. Nothing changes on the node until Apply.";
+    const textButton = pushButton("edit as text", openTextEditor);
+    textButton.title = "Edit the schema as text: paste one in, copy this one "
+        + "out, or write lines by hand. Nothing changes on the node until Apply.";
 
     footer.append(
         pushButton("+ add field", () => {
@@ -1029,10 +1011,7 @@ async function openSchemaEditor(node) {
                         when: "", hint: "" });
             draw();
         }),
-        // The schema as TEXT, which is what travels: paste it into
-        // another node of this kind, a note, or a chat. Copied from the
-        // rows as they stand, so an edit in progress goes with it.
-        copyButton, pasteButton, note,
+        textButton, note,
         pushButton("Cancel", close),
         pushButton("Apply", async () => {
             const text = schemaOf(rows);
