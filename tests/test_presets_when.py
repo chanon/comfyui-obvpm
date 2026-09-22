@@ -4,7 +4,6 @@ Runs without ComfyUI: `nodes` is stubbed the way test_security.py stubs
 it, so borrowed dropdowns can be declared per test.
 """
 
-import importlib
 import sys
 import types
 import unittest
@@ -24,9 +23,7 @@ if "nodes" not in sys.modules:
     stub.NODE_CLASS_MAPPINGS = {}
     sys.modules["nodes"] = stub
 
-presets = importlib.import_module("obvpm_testpack.presets")
-
-
+from obvpm_testpack import presets as presets
 def install(**classes):
     """Make these the installed node classes.
 

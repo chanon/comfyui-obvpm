@@ -1,0 +1,9 @@
+# Left out of the zip that comfy node publish uploads to the Comfy Registry
+# (gitwildmatch, read by comfy-cli). The registry's security scan reads every
+# file in the zip, and the test harness and CI helpers are not what it should
+# be judging: the tests stub ComfyUI's modules and the release script runs git.
+tests/
+.github/
+.gitattributes
+.gitignore
+.comfyignore

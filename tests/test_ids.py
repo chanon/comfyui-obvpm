@@ -3,7 +3,6 @@ table matches the server's, and the replacement specs cover each node.
 
 Run: python -s -m unittest tests.test_ids   (from the pack's parent)
 """
-import importlib
 import json
 import os
 import re
@@ -49,10 +48,23 @@ def _load_pack():
                  "safetensors.torch", "comfy_api", "comfy_api.latest", "PIL",
                  "PIL.Image", "PIL.ImageOps", "PIL.ImageSequence"):
         _stub(name)
-    parent = os.path.dirname(PACK)
-    if parent not in sys.path:
-        sys.path.insert(0, parent)
-    return importlib.import_module(os.path.basename(PACK))
+    # The pack folder is named with a hyphen, so it cannot be named in
+    # an import statement. A package that points at the folder can, and
+    # its __init__ loads as an ordinary submodule -- with __package__
+    # set, so the pack's relative imports resolve through this package.
+    pack = types.ModuleType(PACK_NAME)
+    pack.__path__ = [PACK]
+    sys.modules[PACK_NAME] = pack
+    # (`from pkg import __init__` would hand back the package object's own
+    # __init__ method; the submodule form binds it under its dotted name)
+    import obvpm_pack_under_test.__init__  # noqa: E402,F401
+    loaded = sys.modules[PACK_NAME + ".__init__"]
+    pack.NODE_CLASS_MAPPINGS = loaded.NODE_CLASS_MAPPINGS
+    pack.NODE_DISPLAY_NAME_MAPPINGS = loaded.NODE_DISPLAY_NAME_MAPPINGS
+    return pack
+
+
+PACK_NAME = "obvpm_pack_under_test"
 
 
 def _renamed_from_js():
@@ -71,13 +83,23 @@ class RenameTable(unittest.TestCase):
         try:
             cls.pack = _load_pack()
         except Exception as e:  # pragma: no cover - environment
+            # tearDownClass does not run after a failed setUpClass, and
+            # the stubs are already in place by now
+            cls.tearDownClass()
             raise unittest.SkipTest("pack import needs ComfyUI: %s" % e)
         cls.ids = sys.modules[cls.pack.__name__ + ".ids"]
 
     @classmethod
     def tearDownClass(cls):
         for name in set(sys.modules) - cls._modules_before:
-            del sys.modules[name]
+            gone = sys.modules.pop(name)
+            # `from PIL import ImageOps` also SETS PIL.ImageOps on the
+            # real package, and a later import answers from that
+            # attribute -- so the stub must come off the parent too
+            parent, _, child = name.rpartition(".")
+            holder = sys.modules.get(parent) if parent else None
+            if holder is not None and getattr(holder, child, None) is gone:
+                delattr(holder, child)
 
     def test_every_registered_id_is_suffixed(self):
         for key in self.pack.NODE_CLASS_MAPPINGS:

@@ -3,7 +3,6 @@ Real tensor checks additionally run when Torch is available (embedded Python).
 No ComfyUI server, registry imports, private data or network is needed.
 """
 import asyncio
-import importlib
 import io
 import json
 import os
@@ -51,10 +50,10 @@ class Routes:
 server = types.ModuleType("server")
 server.PromptServer = types.SimpleNamespace(instance=types.SimpleNamespace(routes=Routes()))
 sys.modules["server"] = server
-safety = importlib.import_module("obvpm_testpack.image_safety")
-crop = importlib.import_module("obvpm_testpack.load_image_crop")
-compose = importlib.import_module("obvpm_testpack.compose_images")
-presets = importlib.import_module("obvpm_testpack.presets")
+from obvpm_testpack import image_safety as safety
+from obvpm_testpack import load_image_crop as crop
+from obvpm_testpack import compose_images as compose
+from obvpm_testpack import presets as presets
 presets.register()
 
 

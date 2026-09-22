@@ -14,6 +14,7 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 - Value Presets: a field can now depend on another one. Add `when turbo_loader != off` (or `when spectrum = true`, or `when mode = a, b` for any of several values) after a field's default, and the field is only shown while the choice or true/false field named holds one of those values. While hidden, its value on the bundle is `None` -- so a LoRA name sitting behind an "off" switch is never applied, and its widget no longer suggests that it is. The value is kept and comes back when the field does.
 - Value Presets: a field can carry a hint. Put `# any text` at the end of its schema line and it shows when hovering over the widget.
 - Value Presets: the schema editor has a `copy` button that copies the schema as text, and a `paste` button that replaces the fields with a pasted one (checked first; nothing changes on the node until Apply). The editor also has columns for the condition and the hint.
+- The package published to the Comfy Registry no longer contains the tests and CI helpers, only the pack itself (`.comfyignore`).
 
 ### 0.2.2 (2026-09-16)
 
