@@ -125,6 +125,13 @@ class ImageSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside"):
                 safety.image_path("escape.png")
 
+    def test_compose_with_no_images_passes_none_on(self):
+        # an empty node is not an error: it outputs None, like an unconnected
+        # optional input, so a spare Picture slot need not be bypassed
+        with patch.object(compose, "_load_layer", side_effect=AssertionError("no decode")):
+            for empty in ("", "[]", "  "):
+                self.assertEqual(compose.LoadImagesCompose().compose(empty), (None,))
+
     def test_compose_preflight_before_loading_any_layer(self):
         with patch.object(compose, "_load_layer", side_effect=AssertionError("no decode")):
             with self.assertRaises(ValueError):

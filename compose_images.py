@@ -127,7 +127,9 @@ class LoadImagesCompose:
     )
 
     OUTPUT_TOOLTIPS = (
-        "The composed sheet, one image containing every layer.",
+        "The composed sheet, one image containing every layer -- or None "
+        "when the node holds no images, so an unused one can stay in the "
+        "workflow.",
     )
 
     @classmethod
@@ -168,9 +170,12 @@ class LoadImagesCompose:
                 gap=0, background="black", sizing="natural"):
         items = _parse_layers(layers)
         if not items:
-            raise ValueError(
-                "Load Images & Compose: no images. Add one with the + "
-                "button on the node, or drop image files onto it.")
+            # No images is not an error: an empty node passes None on, the
+            # same as an unconnected optional input, so a spare Picture
+            # slot can sit in a workflow without being bypassed by hand.
+            # (Every consumer here already takes None: Bundle unpacks a
+            # missing field as None and the H3 reference node skips it.)
+            return (None,)
 
         max_megapixels = finite_number(max_megapixels, "max_megapixels", 0, 128)
         gap = int(finite_number(gap, "gap", 0, 256))

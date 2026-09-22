@@ -6,6 +6,12 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 ## Updates
 
+**Also check out my new Timeline node:**  https://github.com/obvpm/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
+
+### Latest HEAD
+
+- Load Images & Compose: an empty node with no images now outputs `None` instead of raising an error. So you don't have to ctrl-b disable empty ones when eg. using one as a reference image input to MiniMax H3.
+
 ### 0.2.2 (2026-09-16)
 
 - Value Presets: fields that borrow another node's dropdown now work with nodes written for ComfyUI's newer node API (V3 Combos ), which declares its choices in a different place. On a current install more than half of all dropdowns are of that kind -- `KSamplerSelect`'s `sampler_name` and `BasicScheduler`'s `scheduler` among them -- and until now they were missing from the field type picker and could not be borrowed at all.
@@ -134,6 +140,8 @@ Outputs are `image` and `mask` (from the alpha channel, like the stock Load Imag
 ### Load Images & Compose
 
 Several input images, each with its own crop, composed into **one** image within a megapixel budget.
+
+A node with no images outputs `None`, the same as an unconnected optional input, so a spare one can stay wired into a reference slot without being bypassed.
 
 ![Load Images & Compose result with three packed crops](assets/load-images-and-compose.webp)
 
