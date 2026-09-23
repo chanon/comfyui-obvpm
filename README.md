@@ -8,7 +8,7 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 **Also check out my new Timeline node:**  https://github.com/obvpm/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
-### Latest HEAD
+### 0.2.4 (2026-09-23)
 
 - Value Presets: The schema editor now has an  **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows.
 - Value Presets: fixed issue where couldn't save preset in ComfyUI Desktop (Electron)
@@ -27,29 +27,7 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 - Value Presets: the schema editor has a `copy` button that copies the schema as text, and a `paste` button that replaces the fields with a pasted one (checked first; nothing changes on the node until Apply). The editor also has columns for the condition and the hint.
 - The package published to the Comfy Registry no longer contains the tests and CI helpers, only the pack itself (`.comfyignore`).
 
-### 0.2.2 (2026-09-16)
-
-- Value Presets: fields that borrow another node's dropdown now work with nodes written for ComfyUI's newer node API (V3 Combos ), which declares its choices in a different place. On a current install more than half of all dropdowns are of that kind -- `KSamplerSelect`'s `sampler_name` and `BasicScheduler`'s `scheduler` among them -- and until now they were missing from the field type picker and could not be borrowed at all.
-- Value Presets: a borrowed dropdown whose choices are numbers, such as `CreateVideo`'s `bit_depth`, now passes its value on as a number, which is what the node it came from expects.
-- Value Presets: hovering a field whose value is cut off, such as a long file name in a narrow node, shows the full value.
-
-### 0.2.1 (2026-09-15)
-
-- Value Presets: the field type picker is now grouped by node pack, with nodes from this pack first, then ComfyUI core, then other packs, each under its own header.
-- Value Presets: a number's range now sets how many decimals its widget shows and steps by. For example:
-  - `0..1.0` will have steps at `0.0`, `0.1`, `0.2` ... to `0.9`, `1.0`
-  - `0..1.00` will have steps at `0.00`, `0.01`, `0.02` ... to `0.99`, `1.00` 
-  - The default or `0..1` is 2 decimal points
-- Load Images & Compose: the divider between the layer strip and the main view can be dragged to widen the strip, and its entries no longer shrink as layers are added -- the strip scrolls instead.
-- Load Images & Compose: while the pointer is over the node, Delete or Backspace removes the selected layer and Up / Down move the selection to the previous or next layer.
-- The Mute node is now called Mute If. Same internal id, only the display name changed.
-- Downscale Image to Megapixels: new `resolution_steps` widget rounds the output width and height down to a multiple, 32 by default. Set it to 1 for the old behaviour; note that existing graphs pick up the default.
-
-### 0.2.0 (2026-09-13)
-
-- In order to fix issue #4 which was caused by the `Bundle` node class id clashing with another node pack's Bundle node, the internal class ids for all nodes have been suffixed with ` (obvpm)`. This ensures there will be no future clashes.
-
-- Workflows saved using previous versions should be migrated automatically upon open. If you find the `Bundle` node in a workflow still not working, please delete it and create a new one.
+# 
 
 ## YouTube Intro Videos
 
