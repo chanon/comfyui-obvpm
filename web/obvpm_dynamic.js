@@ -825,6 +825,15 @@ ${sel} .lg-node-widgets {
 // the compact width rules come off it. What stays: no title text (as on
 // the canvas bar) and no 225px minimum width -- the header's own content,
 // chevron and wire dots, is the whole node.
+//
+// The folded header carries a real slot element per socket (the wires
+// end on THOSE, not on the decorative dots at the header's corners),
+// each with its label text beside the dot, laid out in a column that
+// centres its items. Labels of different lengths make slots of
+// different widths, so their dots fan out, and on a header this narrow
+// the widest one hangs 16px off the left edge -- which is where the
+// wires went (2026-09-23). No labels on a folded node, and the slots
+// pinned to their edge: every dot then sits on the header's edge.
 const FOLD_RULES = (sel) => `
 ${sel}[data-collapsed],
 ${sel}[data-collapsed] > [data-testid="node-inner-wrapper"] {
@@ -833,6 +842,15 @@ ${sel}[data-collapsed] > [data-testid="node-inner-wrapper"] {
 }
 ${sel}[data-collapsed] [data-testid="node-title"] {
     display: none !important;
+}
+${sel}[data-collapsed] .lg-slot .truncate {
+    display: none !important;
+}
+${sel}[data-collapsed] .lg-slot--input {
+    justify-self: start !important;
+}
+${sel}[data-collapsed] .lg-slot--output {
+    justify-self: end !important;
 }
 `;
 

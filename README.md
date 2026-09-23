@@ -16,6 +16,8 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 - Value Presets: the schema editor's *hint* column is now called *tooltip*, with a ✎ button that opens it in a bigger text box for editing
 - Value Presets: fixed escape button closing the whole schema dialog instead of the popups
 - Peek Bundle: fixed issue where it was not updating in Nodes 2.0
+- Load Images & Compose + Load Image & Crop, Peek Bundle: fixed sizing issues in Nodes 2.0
+- Bundle/Unbundle: fixed collapsed bundle/unbundle nodes showing nothing at all in Nodes 2.0 and having wrong wire position
 
 ### 0.2.3 (2026-09-22)
 

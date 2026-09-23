@@ -9,7 +9,7 @@ import { ASPECT_CHOICES, parseAspect, impliedAspectRect, ratioDragRect,
 // button and should read as one.
 // notice, not window.alert: Electron (ComfyUI Desktop) is unreliable
 // with native dialogs -- see obvpm_ui.js
-import { themePalette, notice } from "./obvpm_ui.js";
+import { themePalette, notice, legacyCanvasBox } from "./obvpm_ui.js";
 import { api } from "../../scripts/api.js";
 // The Artius browser's payload shape is decoded in ONE place for the
 // whole pack.
@@ -1530,7 +1530,11 @@ app.registerExtension({
 
                 draw: function (ctx, _node, widgetWidth, y, H, lowQuality) {
                     const u = ui();
-                    const h = boxHeight(this, y, allocHeight ?? H) - 8;
+                    // Nodes 2.0 hands a zoomed width and only the minimum
+                    // height: see obvpm_ui.js. Fills the row, as in classic.
+                    [widgetWidth, H] = legacyCanvasBox(
+                        ctx, widgetWidth, H, true, () => this.triggerDraw?.());
+                    const h = boxHeight(this, y, (isVueMode() ? H : allocHeight ?? H)) - 8;
                     const nodeW = _node?.size?.[0];
                     const effWidth =
                         !isVueMode() && nodeW ? Math.min(widgetWidth, nodeW) : widgetWidth;

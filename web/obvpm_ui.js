@@ -232,6 +232,83 @@ export function openOverlay(width, onClose) {
 }
 
 // ---------------------------------------------------------------------------
+// Custom canvas widgets under Nodes 2.0
+// ---------------------------------------------------------------------------
+
+/**
+ * The box a custom widget's draw() should use under Nodes 2.0, with
+ * the canvas fixed to match: [width, height].
+ *
+ * Nodes 2.0 paints a custom widget through its WidgetLegacy component,
+ * into a canvas of the widget's own. That canvas is sized from
+ * getBoundingClientRect().width -- the width AFTER the graph's zoom
+ * transform -- while the element is laid out at the node's own width
+ * (frontend 1.53). Zoomed out to 50%, the backing store is half as
+ * wide as the element it is stretched over, so everything drawn comes
+ * out twice as big, and the element's height stretches with it and
+ * overflows the slot the node gave it. Zoomed in, the reverse: tiny.
+ * Not a pixel-ratio matter (the component uses a fixed 2x), which is
+ * why one machine at one zoom looks fine and another does not.
+ *
+ * So: give the backing store the layout width at the same pixel ratio
+ * the component chose, restore the plain ratio transform, and draw at
+ * the layout width. The element's CSS height then follows from the
+ * backing store's proportions, exactly the box's height. (Scaling the
+ * context instead, with the store left as it was, stretches everything
+ * vertically: the store's height was never zoomed, only its width.)
+ * The pointer events the component hands back are in layout pixels
+ * (offsetX), so this also puts hit-testing back where the drawing is.
+ *
+ * `fill`: take the slot's full height. The card stretches the last
+ * widget's row to the node's stored height, but the component only
+ * ever asks the widget for its minimum, so an editor that fills the
+ * node in classic mode sat at 240px over a band of nothing. The
+ * canvas is absolute inside the component's wrapper, so the wrapper's
+ * height is the row's, not ours -- no feedback. It does mean the row
+ * can change under us without the canvas changing size -- the card's
+ * footer lays out AFTER the first draw and takes its band back -- and
+ * the component's own resize observer watches the canvas, so nothing
+ * would redraw and the editor sat over the pack badge until a resize.
+ * `redraw` is called when the wrapper's height moves.
+ *
+ * Outside Nodes 2.0, or when nothing differs, [width, height] as given.
+ */
+export function legacyCanvasBox(ctx, width, height, fill, redraw) {
+    const canvas = ctx?.canvas;
+    if (!(typeof LiteGraph !== "undefined" && LiteGraph.vueNodesMode)) {
+        return [width, height];
+    }
+    const wrapper = canvas?.parentElement;
+    if (!wrapper || !wrapper.style?.minHeight) {
+        return [width, height];         // not WidgetLegacy's canvas
+    }
+    const layoutW = canvas.offsetWidth || wrapper.clientWidth;
+    if (!(layoutW > 0) || !(width > 0)) return [width, height];
+    let boxH = height;
+    if (fill && height > 0) {
+        boxH = Math.max(height, Math.floor(wrapper.clientHeight) - 2);
+        if (redraw && !wrapper.__obvpmRowWatch
+                && typeof ResizeObserver !== "undefined") {
+            let last = wrapper.clientHeight;
+            const watch = new ResizeObserver(() => {
+                if (wrapper.clientHeight === last) return;
+                last = wrapper.clientHeight;
+                redraw();
+            });
+            watch.observe(wrapper);
+            wrapper.__obvpmRowWatch = watch;
+        }
+    }
+    if (Math.abs(layoutW - width) < 1 && boxH === height) return [width, height];
+    // the component's pixel ratio, read off what it just allocated
+    const ratio = canvas.width / width || 2;
+    canvas.width = Math.round(layoutW * ratio);
+    if (boxH > 0) canvas.height = Math.round((boxH + 2) * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    return [layoutW, boxH];
+}
+
+// ---------------------------------------------------------------------------
 // In-page stand-ins for window.prompt / window.confirm / window.alert
 //
 // NEVER the native ones. ComfyUI Desktop is an Electron app, and

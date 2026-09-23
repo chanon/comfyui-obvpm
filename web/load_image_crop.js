@@ -5,6 +5,7 @@ import { app } from "../../scripts/app.js";
 import { parseAspect, impliedAspectRect, ratioDragRect,
          snapRectToAspect } from "./obvpm_crop.js";
 import { api } from "../../scripts/api.js";
+import { legacyCanvasBox } from "./obvpm_ui.js";
 
 const MARGIN = 10; // node-space px, matches litegraph widget margin
 const HANDLE = 8; // node-space px hit radius for corner handles
@@ -232,20 +233,23 @@ app.registerExtension({
                 // No computeSize: with computeLayoutSize the editor becomes a
                 // "growable" widget in the canvas layout — it fills whatever
                 // vertical space the node has, letterboxing the image, instead
-                // of forcing the node's height to the image aspect.
-                computeLayoutSize: function (n) {
-                    if (isVueMode()) {
-                        // Vue cards auto-size vertically: keep exact aspect.
-                        const w = state.lastDrawW || (n?.size?.[0] ?? 200);
-                        const h = previewHeight(Math.max(1, w - MARGIN * 2)) + ui().row + 8;
-                        return { minHeight: h, maxHeight: h, minWidth: 0 };
-                    }
+                // of forcing the node's height to the image aspect. The same
+                // in Nodes 2.0: it used to ask for the exact aspect there,
+                // which tied the node's height to its width -- a node could
+                // not be made wider without growing taller. Now the editor
+                // takes the row the card gives it (legacyCanvasBox, fill),
+                // the image is fitted once on load (autoFit), and after that
+                // width and height are the user's to set separately.
+                computeLayoutSize: function () {
                     return { minHeight: MIN_EDITOR_H, maxHeight: 100000, minWidth: 0 };
                 },
 
                 draw: function (ctx, _node, widgetWidth, y, H, lowQuality) {
                     const u = ui();
-                    const h = boxHeight(this, y, allocHeight ?? H) - 8;
+                    // Nodes 2.0 hands a zoomed width: see obvpm_ui.js
+                    [widgetWidth, H] = legacyCanvasBox(
+                        ctx, widgetWidth, H, true, () => this.triggerDraw?.());
+                    const h = boxHeight(this, y, (isVueMode() ? H : allocHeight ?? H)) - 8;
                     const x = MARGIN;
                     // In canvas mode the width param can lag the node during
                     // interactive resizing — trust the node's actual width
@@ -683,7 +687,7 @@ app.registerExtension({
                     if (seq !== loadSeq) return; // superseded by a newer load
                     state.img = img;
                     dbg("image loaded:", info.filename, img.width + "x" + img.height);
-                    if (autoFit && !isVueMode()) {
+                    if (autoFit) {
                         // Fit the node height to the image aspect once, when
                         // the image (first) loads; afterwards the user can
                         // resize freely and the editor letterboxes.

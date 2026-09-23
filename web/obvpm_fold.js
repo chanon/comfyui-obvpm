@@ -44,6 +44,7 @@ export function syncFold(node) {
             configurable: true, enumerable: false,
             get: () => NORMAL_TITLE,
         });
+        publishTitleMode(node, NORMAL_TITLE);
         // No text on the bar: the collapsed width is measured from
         // `getTitle()` (min(size, text + 60)), and on a node as narrow
         // as these the display name would run past the end. Empty, the
@@ -58,9 +59,28 @@ export function syncFold(node) {
     if (!isFolded(node) && has) {
         delete node.title_mode;      // back to the constructor's NO_TITLE
         delete node.getTitle;
+        publishTitleMode(node, node.title_mode);
         return true;
     }
     return false;
+}
+
+/**
+ * Tell Nodes 2.0. Since frontend 1.53 the node carries a tracked state
+ * object (`node._state`) that the Vue card renders from, and its
+ * `titleMode` is copied from the constructor once, when the node is
+ * created: the instance override above is never consulted, so a folded
+ * node rendered as nothing at all (no header, no body -- a 0x0 card,
+ * with its links gathered at the origin). The state is reactive, so a
+ * write is enough; there is no setter for this field to go through.
+ * Older frontends have no `_state`, and are covered by the override.
+ */
+function publishTitleMode(node, mode) {
+    const state = node._state;
+    if (state && typeof state === "object" && "titleMode" in state
+            && state.titleMode !== mode) {
+        state.titleMode = mode;
+    }
 }
 
 /**

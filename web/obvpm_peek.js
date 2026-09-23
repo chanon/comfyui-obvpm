@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { legacyCanvasBox } from "./obvpm_ui.js";
 
 // Peek Bundle draws its report on the node.
 //
@@ -66,7 +67,9 @@ function addReport(node) {
         },
 
         draw(ctx, _node, width, y, H) {
-            const box = boxHeight(this, y, allocHeight ?? H);
+            // Nodes 2.0 hands a zoomed width: see obvpm_ui.js
+            [width, H] = legacyCanvasBox(ctx, width, H, false);
+            const box = boxHeight(this, y, (isVueMode() ? H : allocHeight ?? H));
             const w = (width || node.size[0]) - PAD * 2;
             ctx.save();
             ctx.beginPath();
