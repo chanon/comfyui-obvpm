@@ -11,8 +11,9 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 ### Latest HEAD
 
 - Value Presets: The schema editor now has an  **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows.
+- Value Presets: fixed issue where couldn't save preset in ComfyUI Desktop (Electron)
+- Value Presets: can now also rename presets
 - Peek Bundle: fixed issue where it was not updating in Nodes 2.0
-- Value Presets: *save as preset*, *replace?* and *delete?* now use the pack's own in-page dialogs instead of the browser's `prompt`/`confirm`/`alert` to support ComfyUI Desktop (Electron)
 
 ### 0.2.3 (2026-09-22)
 
@@ -252,6 +253,8 @@ steps: int 1..200 = 20
 <img src="assets/value-presets-modified.webp" title="" alt="A modified Value Presets selection with its changed field marked" width="539">
 
 **What runs is what you see.** Selecting a preset writes its values into the controls, and they stay **editable**. Change one and the node does not quietly detach the label: it keeps saying which preset the values came from and marks itself modified.
+
+**The row under the fields.** **save as preset** stores the current values under a new name. With a preset selected: **save** writes your edits into it and **revert** puts its values back (both only while something is modified), **rename** gives it another name with its values kept, and **delete** removes it (the values stay on the node). **schema** opens the field editor.
 
 ## Bundles (obvpm/bundle)
 

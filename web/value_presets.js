@@ -568,6 +568,47 @@ async function savePreset(node, name) {
     void rebuild(node, true);
 }
 
+/**
+ * Rename the selected preset, keeping its values.
+ *
+ * The name is the key in the library AND the chooser's value AND the
+ * label a saved workflow (and every take) carries, so all three move
+ * together. Renaming onto an existing name replaces that preset, after
+ * asking -- the same rule as saving under a taken name.
+ */
+async function renamePreset(node) {
+    const name = selected(node);
+    if (name === CUSTOM) return;
+    const chosen = await askText("Rename the preset '" + name + "' to:",
+                                 { value: name, ok: "Rename" });
+    const clean = String(chosen ?? "").trim();
+    if (!clean || clean === name) return;
+    if (clean === CUSTOM) {
+        await notice("'" + CUSTOM + "' is the name for values that are not "
+                     + "a preset; pick another.");
+        return;
+    }
+    const library = readJson(node, PRESETS);
+    if (!Object.prototype.hasOwnProperty.call(library, name)) return;
+    if (Object.prototype.hasOwnProperty.call(library, clean)
+            && !(await askConfirm("Replace the preset '" + clean + "' with '"
+                                  + name + "'?", { ok: "Replace" }))) {
+        return;
+    }
+    // Rebuilt in order, so the renamed preset keeps its place rather
+    // than dropping to the end (the chooser sorts anyway; the JSON is
+    // what a diff of the workflow shows).
+    const renamed = Object.create(null);
+    for (const key of Object.keys(library)) {
+        if (key === clean) continue;    // being replaced
+        renamed[key === name ? clean : key] = library[key];
+    }
+    writeJson(node, PRESETS, renamed);
+    const chooser = widget(node, PRESET);
+    if (chooser) chooser.value = clean;
+    void rebuild(node, true);
+}
+
 async function deletePreset(node) {
     const name = selected(node);
     if (name === CUSTOM) return;
@@ -1206,6 +1247,13 @@ function rowButtons(node) {
           tip: "Put back what '" + name + "' holds, discarding: "
                + changed.join(", "),
           run: () => { void applyPreset(node); } },
+        // Only while the values ARE the preset's: with edits pending,
+        // "rename" next to "save" and "revert" reads as a question about
+        // which values the new name would get.
+        { key: "rename", label: "rename",
+          on: named && changed.length === 0,
+          tip: "Give '" + name + "' another name; its values stay.",
+          run: () => { void renamePreset(node); } },
         { key: "delete", label: "delete", on: named,
           tip: "Remove '" + name + "'. The values stay on the node.",
           run: () => { void deletePreset(node); } },
