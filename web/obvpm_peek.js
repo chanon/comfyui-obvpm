@@ -121,6 +121,13 @@ function showReport(node, text) {
     node.properties ??= {};
     node.properties.obvpm_peek_report = text ?? "";
     node.graph?.setDirtyCanvas(true, true);
+    // Nodes 2.0 paints a custom widget through WidgetLegacy, into a
+    // canvas of its own that a dirty flag on the graph never reaches. It
+    // repaints on the triggerDraw it installs on the widget (and on the
+    // widget's callback, which a report has no reason to fire), so a
+    // report that only ever changes closure state has to ask. Also what
+    // re-reads computeLayoutSize, so the box grows to the new lines.
+    peek.widget.triggerDraw?.();
 }
 
 app.registerExtension({

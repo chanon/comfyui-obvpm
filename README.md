@@ -11,6 +11,7 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 ### Latest HEAD
 
 - Value Presets: the schema editor's `copy` and `paste` buttons are replaced by one **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows (the node is only changed when you press Apply).
+- Peek Bundle: the report now updates in Nodes 2.0 (Vue nodes mode). It was drawn once and never repainted there, so after a run -- or after switching a Value Presets preset upstream -- it kept showing the placeholder or the previous run's values. Classic mode was unaffected.
 
 ### 0.2.3 (2026-09-22)
 
