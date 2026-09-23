@@ -71,7 +71,7 @@ FALSE_WORDS = ("false", "0", "no", "off")
 
 _MISSING = object()
 
-DEFAULT_SCHEMA = """# one field per line:  name: type [range] [= default] [when field = value] [# hint]
+DEFAULT_SCHEMA = """# one field per line:  name: type [range] [= default] [when field = value] [# tooltip]
 # types: text | int | float | bool | choice a, b, c | @Node.input
 steps: int 1..200 = 20
 cfg: float 0..100 = 5.0
@@ -849,7 +849,7 @@ class ValuePresets:
         "(@LoraName.lora_name) and then tracks that list instead of a "
         "copy of it, can be shown only while another field holds a "
         "value ('when turbo = on'; hidden, it is None on the bundle), "
-        "and can carry a hint ('# ...'). Outputs an ordinary bundle -- "
+        "and can carry a tooltip ('# ...'). Outputs an ordinary bundle -- "
         "Unbundle it (hide fields in its config to take a subset)."
     )
     OUTPUT_TOOLTIPS = (
@@ -877,7 +877,7 @@ class ValuePresets:
                                "or bool field above it holds one of those "
                                "values; otherwise it is hidden and its "
                                "value on the bundle is None. Last, "
-                               "' # text' is the hint shown on hover.",
+                               "' # text' is the tooltip shown on hover.",
                 }),
                 "preset": ("STRING", {
                     "default": CUSTOM,

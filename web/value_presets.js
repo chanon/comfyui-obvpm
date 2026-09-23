@@ -777,9 +777,11 @@ async function openSchemaEditor(node) {
     for (const [label, width] of [["", "58px"], ["name", "150px"],
                                   ["type", "200px"], ["range / choices", "160px"],
                                   ["default", "110px"], ["shown when", "160px"],
-                                  ["hint", "160px"]]) {
-        columns.appendChild(el("div", { flex: "0 0 " + width,
-                                        overflow: "hidden" }, label));
+                                  ["tooltip", "160px"]]) {
+        // the last column takes what is left, so the rows end at the
+        // panel's edge and the ✕ lines up under Apply
+        const flex = label === "tooltip" ? "1 1 " + width : "0 0 " + width;
+        columns.appendChild(el("div", { flex, overflow: "hidden" }, label));
     }
     const list = el("div", {
         display: "flex", flexDirection: "column", gap: "4px",
@@ -836,14 +838,79 @@ async function openSchemaEditor(node) {
             + "field above it holds one of these values: turbo = on, or "
             + "turbo != off, or mode = a, b. Hidden, its value on the "
             + "bundle is None.";
+        // The tooltip: a box in the row for a few words, and a button
+        // that opens it in a larger one -- a sentence or two does not
+        // fit 160px, and editing text you cannot see is guesswork.
+        // Joined to the box as one control: the box loses its right
+        // corners, the pencil its left ones and the border between.
+        const tip = textBox(row.hint, "tooltip", (v) => { row.hint = v; },
+                            "100%");
+        Object.assign(tip.style, { flex: "1 1 auto",
+                                   borderRadius: "4px 0 0 4px" });
+        const pencil = pushButton("✎", () => openTooltipEditor(row, tip), {
+            padding: "1px 7px", borderRadius: "0 4px 4px 0",
+            borderLeft: "none", flex: "0 0 auto",
+        });
+        pencil.title = "Edit the tooltip in a larger box";
+        const tipGroup = el("div", { display: "flex", flex: "1 1 160px",
+                                     minWidth: "0" });
+        tipGroup.append(tip, pencil);
         line.append(
             textBox(row.def, "default", (v) => { row.def = v; }, "110px"),
             when,
-            textBox(row.hint, "hint", (v) => { row.hint = v; }, "160px"),
+            tipGroup,
             pushButton("✕", () => { rows.splice(index, 1); draw(); },
                        { padding: "1px 6px" }),
         );
         return line;
+    }
+
+    /**
+     * The tooltip in a multiline box. Line breaks are folded to spaces
+     * on the way back: the schema keeps one field per line, so the text
+     * after `#` cannot hold a newline (the widget's tooltip wraps on
+     * its own).
+     */
+    function openTooltipEditor(row, box) {
+        const pop = el("div", {
+            position: "fixed", inset: "0", zIndex: "10001",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.35)",
+        });
+        const card = el("div", {
+            background: PANEL, border: "1px solid " + EDGE,
+            borderRadius: "8px", padding: "12px", width: "min(560px, 92vw)",
+            display: "flex", flexDirection: "column", gap: "6px",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.5)", color: INK, font: TEXT,
+        });
+        const area = el("textarea", {
+            background: FILL, color: INK, border: "1px solid " + EDGE,
+            borderRadius: "4px", padding: "6px 8px", font: TEXT,
+            minHeight: "120px", resize: "vertical", boxSizing: "border-box",
+        });
+        area.value = String(row.hint ?? "");
+        area.placeholder = "Shown when hovering over the field";
+        const buttons = el("div", { display: "flex", gap: "6px",
+                                    justifyContent: "flex-end" });
+        const accept = () => {
+            row.hint = area.value.replace(/\s*\n\s*/g, " ").trim();
+            box.value = row.hint;
+            pop.remove();
+        };
+        buttons.append(
+            pushButton("Cancel", () => pop.remove()),
+            pushButton("OK", accept, { fontWeight: "600" }));
+        card.append(el("div", { font: TITLE },
+                       "Tooltip for " + (String(row.name ?? "").trim()
+                                         || "this field")),
+                    area, buttons);
+        pop.appendChild(card);
+        pop.addEventListener("mousedown", (ev) => {
+            if (ev.target === pop) pop.remove();
+        });
+        pop.dataset.obvpmPop = "1";      // Escape closes this first
+        overlay.appendChild(pop);
+        area.focus();
     }
 
     /** The type picker: the basics, then every dropdown on the machine. */
@@ -875,6 +942,7 @@ async function openSchemaEditor(node) {
         });
         box.append(el("div", { font: TITLE }, "Field type"),
                    search, results);
+        pop.dataset.obvpmPop = "1";      // Escape closes this first
         overlay.appendChild(pop);
         search.focus();
 
@@ -1024,11 +1092,11 @@ async function openSchemaEditor(node) {
             whiteSpace: "pre", overflowWrap: "normal", overflowX: "auto",
         });
         area.value = schemaOf(rows);
-        area.placeholder = "name: type [range] [= default] [when field = value] [# hint]";
+        area.placeholder = "name: type [range] [= default] [when field = value] [# tooltip]";
         area.spellcheck = false;
         const legend = el("div", { color: DIM, font: "12px sans-serif" },
             "One field per line: name: type [range or choices] [= default] "
-            + "[when field = value] [# hint]. Types: text, int, float, bool, "
+            + "[when field = value] [# tooltip]. Types: text, int, float, bool, "
             + "choice a, b, c, @Node.input. Lines starting with # are comments.");
         const buttons = el("div", { display: "flex", gap: "6px",
                                     justifyContent: "flex-end" });
@@ -1043,6 +1111,7 @@ async function openSchemaEditor(node) {
         pop.addEventListener("mousedown", (ev) => {
             if (ev.target === pop) pop.remove();
         });
+        pop.dataset.obvpmPop = "1";      // Escape closes this first
         overlay.appendChild(pop);
         area.focus();
     }

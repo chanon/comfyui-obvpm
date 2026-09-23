@@ -210,10 +210,18 @@ export function openOverlay(width, onClose) {
         onClose?.();
     }
     function onKey(ev) {
-        if (ev.key === "Escape") {
-            ev.stopPropagation();
-            close();
+        if (ev.key !== "Escape") return;
+        ev.stopPropagation();
+        // A popup opened INSIDE this dialog (a type picker, a text
+        // editor) goes first, one per press: it is marked with
+        // data-obvpm-pop and sits in the overlay above the panel. Only
+        // with none open does Escape close the dialog itself.
+        const pops = overlay.querySelectorAll(":scope > [data-obvpm-pop]");
+        if (pops.length) {
+            pops[pops.length - 1].remove();
+            return;
         }
+        close();
     }
     overlay.addEventListener("mousedown", (ev) => {
         if (ev.target === overlay) close();

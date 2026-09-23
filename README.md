@@ -13,6 +13,8 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 - Value Presets: The schema editor now has an  **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows.
 - Value Presets: fixed issue where couldn't save preset in ComfyUI Desktop (Electron)
 - Value Presets: can now also rename presets
+- Value Presets: the schema editor's *hint* column is now called *tooltip*, with a ✎ button that opens it in a bigger text box for editing
+- Value Presets: fixed escape button closing the whole schema dialog instead of the popups
 - Peek Bundle: fixed issue where it was not updating in Nodes 2.0
 
 ### 0.2.3 (2026-09-22)
@@ -235,9 +237,9 @@ Output: `bundle` — an ordinary bundle, so Unbundle works on it unchanged (hide
 - **reorder** them → nothing moves at all;
 - **rename** one in the schema editor → its stored value is carried to the new name, in the node's own values *and in every preset*.
 
-**Editing the fields.** Press **schema** for a row per field — name, type, range or choices, default, condition, hint — with ▲▼ to reorder and a searchable type picker. The picker offers the basic types and then **every dropdown on this install**. **edit as text** opens the schema as plain text, for pasting one in, copying this one out, or writing several lines at once; *Use this schema* checks it and replaces the rows (the node is only changed when you press Apply).
+**Editing the fields.** Press **schema** for a row per field — name, type, range or choices, default, condition, tooltip (with a ✎ button that opens it in a larger box) — with ▲▼ to reorder and a searchable type picker. The picker offers the basic types and then **every dropdown on this install**. **edit as text** opens the schema as plain text, for pasting one in, copying this one out, or writing several lines at once; *Use this schema* checks it and replaces the rows (the node is only changed when you press Apply).
 
-**The schema text.** One field per line: `name: type [range or choices] [= default] [when field = value] [# hint]`
+**The schema text.** One field per line: `name: type [range or choices] [= default] [when field = value] [# tooltip]`
 
 ```
 turbo_loader: choice off, normal, larryvrh = off   # which loader applies the turbo LoRA
@@ -248,7 +250,7 @@ steps: int 1..200 = 20
 
 - **Types** are `text`, `int`, `float`, `bool`, `choice a, b, c`, and `@Node.input` to borrow another node's dropdown, which then tracks that list instead of a copy of it. A float range sets the decimals shown (`0..1.0` one, `0..1.00` two).
 - **`when field = value`** (or `!=`, and `a, b` for any of several) shows the field only while a `choice` or `bool` field **declared above it** holds one of those values. While hidden, the field's value **on the bundle is `None`** — whatever is stored — so nothing downstream acts on a setting the node is not showing. The stored value is kept and returns with the field. A field whose deciding field is itself hidden is hidden too.
-- **`# hint`** at the end of the line is shown when hovering over the field. (A `#` at the *start* of a line is a comment.)
+- **`# tooltip`** at the end of the line is shown when hovering over the field. (A `#` at the *start* of a line is a comment.)
 
 <img src="assets/value-presets-modified.webp" title="" alt="A modified Value Presets selection with its changed field marked" width="539">
 
