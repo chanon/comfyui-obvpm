@@ -188,7 +188,7 @@ export function pushButton(label, onClick, style) {
  * Escape is captured (`true`) so the canvas underneath never sees it --
  * litegraph binds keys at the document level too.
  */
-export function openOverlay(width) {
+export function openOverlay(width, onClose) {
     const overlay = el("div", {
         position: "fixed", inset: "0", background: "rgba(0,0,0,0.55)",
         zIndex: "10000", display: "flex", alignItems: "center",
@@ -207,6 +207,7 @@ export function openOverlay(width) {
     function close() {
         document.removeEventListener("keydown", onKey, true);
         overlay.remove();
+        onClose?.();
     }
     function onKey(ev) {
         if (ev.key === "Escape") {
@@ -220,6 +221,78 @@ export function openOverlay(width) {
     document.addEventListener("keydown", onKey, true);
 
     return { overlay, panel, close };
+}
+
+// ---------------------------------------------------------------------------
+// In-page stand-ins for window.prompt / window.confirm / window.alert
+//
+// NEVER the native ones. ComfyUI Desktop is an Electron app, and
+// Electron does not implement window.prompt at all -- the call returns
+// at once with nothing and no dialog, which read as "save as preset
+// does nothing" (issue #11); confirm and alert are at the host's mercy
+// too (and a native dialog also steals keyboard focus from the page,
+// which is where the "inputs stop responding afterwards" came from).
+// These are ordinary elements on the same overlay every other dialog in
+// the pack uses, so they work wherever the page does. They resolve
+// rather than block: Escape and a click outside answer null / false.
+// ---------------------------------------------------------------------------
+
+function dialog(title, body, buttons, onDismiss) {
+    const { overlay, panel, close } = openOverlay("min(440px, 92vw)", onDismiss);
+    if (title) panel.appendChild(el("div", { font: TITLE }, title));
+    if (body) panel.appendChild(body);
+    const row = el("div", { display: "flex", gap: "6px",
+                            justifyContent: "flex-end", paddingTop: "4px" });
+    row.append(...buttons);
+    panel.appendChild(row);
+    document.body.appendChild(overlay);
+    return close;
+}
+
+/** window.prompt: resolves the text entered, or null when dismissed. */
+export function askText(title, { value, placeholder, ok } = {}) {
+    return new Promise((resolve) => {
+        let answered = false;
+        const settle = (v) => { if (!answered) { answered = true; resolve(v); } };
+        let text = value ?? "";
+        const box = textBox(text, placeholder ?? "", (v) => { text = v; }, "100%");
+        const accept = () => { settle(text); close(); };
+        box.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter") { ev.preventDefault(); accept(); }
+        });
+        const close = dialog(title, box, [
+            pushButton("Cancel", () => { settle(null); close(); }),
+            pushButton(ok ?? "OK", accept, { fontWeight: "600" }),
+        ], () => settle(null));
+        box.focus();
+        box.select();
+    });
+}
+
+/** window.confirm: resolves true on the confirming button, else false. */
+export function askConfirm(message, { title, ok } = {}) {
+    return new Promise((resolve) => {
+        let answered = false;
+        const settle = (v) => { if (!answered) { answered = true; resolve(v); } };
+        const body = el("div", { whiteSpace: "pre-wrap" }, message);
+        const close = dialog(title ?? "", body, [
+            pushButton("Cancel", () => { settle(false); close(); }),
+            pushButton(ok ?? "OK", () => { settle(true); close(); },
+                       { fontWeight: "600" }),
+        ], () => settle(false));
+    });
+}
+
+/** window.alert: resolves when dismissed. */
+export function notice(message, title) {
+    return new Promise((resolve) => {
+        let answered = false;
+        const settle = () => { if (!answered) { answered = true; resolve(); } };
+        const body = el("div", { whiteSpace: "pre-wrap" }, message);
+        const close = dialog(title ?? "", body, [
+            pushButton("OK", () => { settle(); close(); }, { fontWeight: "600" }),
+        ], settle);
+    });
 }
 
 // ---------------------------------------------------------------------------

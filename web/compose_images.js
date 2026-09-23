@@ -7,7 +7,9 @@ import { ASPECT_CHOICES, parseAspect, impliedAspectRect, ratioDragRect,
          snapRectToAspect } from "./obvpm_crop.js";
 // The palette the Value Presets buttons wear -- the aspect pill is a
 // button and should read as one.
-import { themePalette } from "./obvpm_ui.js";
+// notice, not window.alert: Electron (ComfyUI Desktop) is unreliable
+// with native dialogs -- see obvpm_ui.js
+import { themePalette, notice } from "./obvpm_ui.js";
 import { api } from "../../scripts/api.js";
 // The Artius browser's payload shape is decoded in ONE place for the
 // whole pack.
@@ -624,7 +626,7 @@ function isComposeNode(node) {
 }
 
 async function artiusAddToNode(node, assets) {
-    if ((assets || []).length > MAX_LAYERS) { alert("At most 64 compose layers are allowed"); return true; }
+    if ((assets || []).length > MAX_LAYERS) { void notice("At most 64 compose layers are allowed"); return true; }
     const wanted = (assets || []).filter(isArtiusImage);
     if (!wanted.length) return true;
     // Consumed: Artius's own dragend fallback must not re-insert it.
@@ -657,7 +659,7 @@ async function artiusAddToNode(node, assets) {
             node.obvpmAddLayer?.(await uploadImage(file));
         } catch (err) {
             console.error("[obvpm-compose] Artius copy failed:", err);
-            alert(`Could not add ${asset.filename}: ${err.message}`);
+            void notice(`Could not add ${asset.filename}: ${err.message}`);
         }
     }
     inputFilesAt = 0; // the input listing just changed
@@ -878,7 +880,7 @@ app.registerExtension({
 
             function canAdd(count) {
                 if (state.removed || state.invalid || state.layers.length + count > MAX_LAYERS) {
-                    alert(state.error || "At most 64 compose layers are allowed");
+                    void notice(state.error || "At most 64 compose layers are allowed");
                     return false;
                 }
                 return true;
@@ -887,7 +889,7 @@ app.registerExtension({
             function addLayer(path) {
                 if (!canAdd(1)) return false;
                 try { parseLayers(JSON.stringify([...state.layers, { image: path }])); }
-                catch (err) { alert(err.message); return false; }
+                catch (err) { void notice(err.message); return false; }
                 state.layers.push({ image: path, crop: null, aspect: null });
                 state.sel = state.layers.length - 1;
                 state.reveal = state.sel;
@@ -921,12 +923,12 @@ app.registerExtension({
             };
 
             node.obvpmRunImport = async function (count, fn) {
-                if (state.importing || activeImports >= 2) { alert("Image imports are busy; retry shortly"); return true; }
+                if (state.importing || activeImports >= 2) { void notice("Image imports are busy; retry shortly"); return true; }
                 if (!canAdd(count)) return true;
                 state.importing = true;
                 activeImports++;
                 try { await fn(); }
-                catch (err) { alert(`Could not add images: ${err.message}`); }
+                catch (err) { void notice(`Could not add images: ${err.message}`); }
                 finally { state.importing = false; activeImports--; }
                 return true;
             };

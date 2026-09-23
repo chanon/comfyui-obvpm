@@ -5,7 +5,7 @@ import { api } from "../../scripts/api.js";
 // at nothing. One implementation of that fix, and of the dialog kit and
 // palette (the bundle config and Load Images & Compose use them too).
 import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL,
-         textBox, pushButton, openOverlay,
+         textBox, pushButton, openOverlay, askText, askConfirm, notice,
          dropWidgetSockets, themePalette, valueTooltip } from "./obvpm_ui.js";
 
 /**
@@ -541,19 +541,24 @@ function noteError(node, message) {
     w.disabled = true;
 }
 
-function savePreset(node, name) {
-    const chosen = name ?? window.prompt(
-        "Save these values as a preset called:", "");
+// In-page dialogs, not window.prompt/confirm/alert: ComfyUI Desktop's
+// Electron shell has no prompt() at all, so "save as preset" silently
+// did nothing there (issue #11). See obvpm_ui.js.
+async function savePreset(node, name) {
+    const chosen = name ?? await askText(
+        "Save these values as a preset called:",
+        { placeholder: "preset name", ok: "Save" });
     const clean = String(chosen ?? "").trim();
     if (!clean) return;
     if (clean === CUSTOM) {
-        window.alert("'" + CUSTOM + "' is the name for values that are not "
+        await notice("'" + CUSTOM + "' is the name for values that are not "
                      + "a preset; pick another.");
         return;
     }
     const library = readJson(node, PRESETS);
     if (!name && Object.prototype.hasOwnProperty.call(library, clean)
-            && !window.confirm("Replace the preset '" + clean + "'?")) {
+            && !(await askConfirm("Replace the preset '" + clean + "'?",
+                                  { ok: "Replace" }))) {
         return;
     }
     library[clean] = readJson(node, VALUES);
@@ -563,11 +568,11 @@ function savePreset(node, name) {
     void rebuild(node, true);
 }
 
-function deletePreset(node) {
+async function deletePreset(node) {
     const name = selected(node);
     if (name === CUSTOM) return;
-    if (!window.confirm("Delete the preset '" + name + "'? The values stay "
-                        + "on the node.")) {
+    if (!(await askConfirm("Delete the preset '" + name + "'? The values "
+                           + "stay on the node.", { ok: "Delete" }))) {
         return;
     }
     const library = readJson(node, PRESETS);
@@ -1190,12 +1195,12 @@ function rowButtons(node) {
         // on the row says what saving would make.
         { key: "save", label: named ? "save as" : "save as preset", on: true,
           tip: "Store these values under a new name.",
-          run: () => savePreset(node, null) },
+          run: () => { void savePreset(node, null); } },
         { key: "update", label: "save",
           on: named && changed.length > 0,
           tip: "Save these values into '" + name + "' (" + quantity
                + "): " + changed.join(", "),
-          run: () => savePreset(node, name) },
+          run: () => { void savePreset(node, name); } },
         { key: "revert", label: "revert",
           on: named && changed.length > 0,
           tip: "Put back what '" + name + "' holds, discarding: "
@@ -1203,7 +1208,7 @@ function rowButtons(node) {
           run: () => { void applyPreset(node); } },
         { key: "delete", label: "delete", on: named,
           tip: "Remove '" + name + "'. The values stay on the node.",
-          run: () => deletePreset(node) },
+          run: () => { void deletePreset(node); } },
         { key: "schema", label: "schema", on: true,
           tip: "Add, rename, retype or reorder the fields.",
           run: () => openSchemaEditor(node) },

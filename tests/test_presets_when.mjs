@@ -62,7 +62,8 @@ async function harness() {
             mod = mock({ themePalette: () => ({}), el: noop,
                 valueTooltip: (w, width, base) => base,
                 ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL",
-                    "textBox", "pushButton", "openOverlay", "dropWidgetSockets"].map((k) => [k, noop])) });
+                    "textBox", "pushButton", "openOverlay", "dropWidgetSockets",
+                    "askText", "askConfirm", "notice"].map((k) => [k, noop])) });
         } else {
             let source = await readFile(new URL(name, root), "utf8");
             source += "\nexport { rebuild, isShown, applyVisibility, rowOf, lineOf, schemaOf, readJson };";
