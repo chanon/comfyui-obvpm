@@ -20,6 +20,8 @@ from functools import partial
 
 import comfy.samplers
 
+from .compat import CompatibilityCheck
+from . import compat as _compat
 from .compose_images import LoadImagesCompose
 from .load_image_crop import LoadImageCrop
 
@@ -90,6 +92,7 @@ NODE_CLASS_MAPPINGS = {
     "SamplerName (obvpm)": SamplerName,
     "SchedulerName (obvpm)": SchedulerName,
     "CleanVRAM (obvpm)": CleanVRAM,
+    "CompatibilityCheck (obvpm)": CompatibilityCheck,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -119,6 +122,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SamplerName (obvpm)": "Sampler Name",
     "SchedulerName (obvpm)": "Scheduler Name",
     "CleanVRAM (obvpm)": "Clean VRAM",
+    "CompatibilityCheck (obvpm)": "Compatibility Check",
 }
 
 # The bare ids of 0.1.x still load: the frontend rewrites them on the way
@@ -127,6 +131,7 @@ _ids.register_replacements(NODE_CLASS_MAPPINGS)
 
 try:
     _presets.register()
+    _compat.register()
 except Exception:   # headless/test runs have no PromptServer
     import logging
     logging.getLogger("obvpm").info(

@@ -6,6 +6,10 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/obvpm/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- New node **Compatibility Check**: write what the workflow needs (`comfyui >= 0.35.0`, `some-pack >= 1.2 node: NodeId`, `node NodeId`, `node NodeId has input_name`, `not node NodeId`, `not pack FolderName`) and the node shows whether the install can run the workflow on its face as the workflow loads (every rule, as tables, in **View Details**, where the rules are also edited), and stops a run with what to fix -- the fix and a link -- while anything fails. The `has input_name` form catches a fork that registers the same node name with different widgets; the `not` forms catch packs known to break the workflow when installed. Its **Copy Report** button copies the whole install (ComfyUI, frontend, Nodes 2.0 or classic, Python, torch, OS, every custom node pack with version and commit) for pasting into a bug report.
+
 ### 0.2.5 (2026-09-24)
 
 - Value Presets and Switches: Fixed on ComfyUI frontend 1.53 (ComfyUI 0.37) the preset chooser and a switch's `selected` dropdown were renamed `preset#1` / `selected#1` when the node was created, after which choosing a preset changed nothing and the prompt sent the wrong input name (issue #12). 
@@ -94,6 +98,7 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 | [Optional Image / Video / Audio / Latent / Any](#optional-image--optional-video--optional-audio--optional-latent--optional-any) | Pass a value through; mute or bypass when it is missing |
 | [Required Model](#required-model)                                                                                               | Refuse to queue until a model is wired in               |
 | [Mute If](#mute-if)                                                                                                             | Block everything downstream on a boolean                |
+| [Compatibility Check](#compatibility-check)                                                                                     | Refuse to run until the install meets the workflow's needs |
 | [Lazy Switch](#lazy-switch)                                                                                                     | Boolean two-way switch; only the chosen side runs       |
 | [Lazy Switch 2 Values / 3 Values](#lazy-switch-2-values--3-values)                                                              | The same switch for two or three values together        |
 | [Lazy Case Switch](#lazy-case-switch)                                                                                           | Pick a branch by name from a list you write             |
@@ -344,6 +349,31 @@ The minimal gate: passes a MODEL through. The input is required, so queueing wit
 Passes any input through unchanged; when the `mute` boolean is true, blocks everything downstream. The boolean is connectable, so it can be driven by logic (e.g. a gate's `present` through a Boolean invert). Note: nodes *upstream* of the input still run — use a Lazy Switch when you want the upstream work skipped too.
 
 ### Switches (obvpm/switches)
+
+#### Compatibility Check
+
+What a workflow needs from the install, checked. The node's face says whether this install can run the workflow and names anything that fails; **View Details** shows every rule in a table per kind (ComfyUI, node packs, nodes, must not be installed) with the result, what is required, what is installed, the link, and for a failure what was found and the fix. A queued run stops at this node, before anything else runs, with the same list while anything fails. The node has no sockets: just drop it into the workflow.
+
+To change the requirements (this is for the workflow's author), press the **settings** (⚙) button in the details: the tables become editable, with **+ Add** and a remove button per row, a rule's note is edited from its **Note** button, and nothing changes until **Apply** (**Cancel** or Escape backs out). **Edit as Text** opens the same rules as text, one requirement per line, for pasting a list. Under the tables the rules are stored as text, like this:
+
+```
+comfyui >= 0.35.0
+comfyui-obvpm >= 0.2.3   node: ValuePresets (obvpm)   https://github.com/chanon/comfyui-obvpm
+node MinimaxH3LatentUpscaler3D has enable_temporal_chunking   https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler   # the original pack, not the Plus fork
+node ModelPreviewOverrideKJ   https://github.com/kijai/ComfyUI-KJNodes   # ComfyUI-KJNodes
+not pack ComfyUI-Workflow-Encrypt   # rewrites saved workflows
+```
+
+Four kinds of rule:
+
+- **`comfyui >= 0.35.0`** — the ComfyUI version.
+- **`some-pack >= 1.2.0 node: NodeId`** — a pack's version, read from the installed pack's `pyproject.toml`. The pack is found by a node it registers, so it works whatever its folder is called.
+- **`node NodeId`** / **`node NodeId has input_name`** — a node must be present, or must declare an input. The second form tells a fork that registers the **same node name with different widgets** apart from the original, which loads a saved workflow wrong and nothing else reports.
+- **`not node NodeId`** / **`not pack FolderName`** — a node or a pack that must **not** be installed, for the packs known to break the workflow when they are present. A pack is named by its folder under `custom_nodes` (case does not matter), because some register no node at all.
+
+**Copy Report** copies the install as text for a bug report: ComfyUI, frontend, Nodes 2.0 or classic, Python, torch, OS, language, every loaded custom node pack with its version and git commit, and this node's results.
+
+A URL on the line becomes the link shown with the result; text after ` #` is shown with a failure. Lines starting with `#` are comments. A rule that cannot be read is shown as a failure naming the line; a check that cannot be made (a node that will not describe itself) passes rather than blocking. Nothing in the rules is ever imported or evaluated.
 
 #### Lazy Switch
 

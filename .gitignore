@@ -8,3 +8,5 @@ private/
 
 # cygwin/git-bash crash dumps -- land wherever the shell was cwd'd
 *.stackdump
+tests/browser/node_modules/
+tests/browser/package-lock.json

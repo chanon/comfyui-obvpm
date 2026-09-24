@@ -109,7 +109,9 @@ class RenameTable(unittest.TestCase):
 
     def test_rename_targets_are_registered_and_sources_are_not(self):
         keys = set(self.pack.NODE_CLASS_MAPPINGS)
-        self.assertEqual(set(self.ids.RENAMED.values()), keys)
+        # every rename lands on a registered id; nodes added after the
+        # rename (Compatibility Check) have no old id to come from
+        self.assertTrue(set(self.ids.RENAMED.values()) <= keys)
         self.assertFalse(set(self.ids.RENAMED) & keys)
 
     def test_js_table_matches_python(self):

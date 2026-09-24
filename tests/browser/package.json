@@ -1,0 +1,9 @@
+{
+  "name": "obvpm-browser-checks",
+  "private": true,
+  "description": "headless real-frontend checks for the pack's node UI (see README.md)",
+  "type": "module",
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

@@ -43,6 +43,174 @@ function cssVar(name, fallback) {
     }
 }
 
+/**
+ * A DOM panel on a node: fills the node's height, scrolls inside it,
+ * and never dictates it -- THE recipe for any DOM widget whose content
+ * can be long (a report, a list, a log). Both renderers, one call.
+ *
+ * Why each part is there (each one was a live bug first):
+ *
+ * - `computeLayoutSize` with a `maxHeight`: in classic mode the node's
+ *   spare height is handed to widgets by distributeSpace, and only to
+ *   those that name a range -- without maxHeight the panel sits at its
+ *   minimum however tall the node is dragged (Peek Bundle, 2026-09).
+ *   In Nodes 2.0 the same method is what makes the widget's grid row
+ *   `auto` (WidgetGrid.vue) so it can stretch; a widget without it gets
+ *   a `min-content` row and a `flex: 1` grid it can't use.
+ * - `contain: size` on the element: Nodes 2.0 clamps a node's height to
+ *   the card's MEASURED content height (useNodeResize probes it with
+ *   --node-height: 0), so an element sized by its content is a floor
+ *   the node can't go under -- the width then can't be changed without
+ *   the height snapping back, and nothing ever scrolls because nothing
+ *   is bounded (Compatibility Check, 2026-09-24). With size containment
+ *   the content contributes NOTHING to that measure; the row stretches
+ *   to whatever height the node has, and the panel scrolls inside it.
+ *   `min-height` is the only floor left, so it is the node's floor too.
+ * - `overflow: auto` (both axes) + `box-sizing: border-box`: the
+ *   scrolling itself, and padding counted inside the bounded box. Size
+ *   containment zeroes the intrinsic WIDTH too, so the panel never
+ *   widens the node: a node narrower than a line scrolls sideways.
+ *   Keep `minWidth` at 0 unless the content is unreadable below some
+ *   width -- a minWidth becomes the node's floor in classic mode
+ *   (computeSize adds it), and Nodes 2.0 has its own 225 px floor.
+ * - `width` neutralised: a DOM widget that reports a width pins the
+ *   node's minimum width to the panel's last layout, so the node can't
+ *   be made narrower afterwards.
+ * - `serialize: false` twice: both places the two renderers read it.
+ *
+ * GROWING TO FIT: call the returned widget's `fitToContent()` after the
+ * content changes. Never hand-roll it -- every hand-rolled version so far
+ * broke the same way (see fitPanel below). Do NOT size the panel from
+ * its scrollHeight on every repaint either: the user's resize is theirs.
+ */
+export function addPanelWidget(node, name, element,
+                               { minHeight = 120, minWidth = 0, scroller = null } = {}) {
+    Object.assign(element.style, {
+        contain: "size",
+        minHeight: minHeight + "px",
+        overflow: "auto",
+        boxSizing: "border-box",
+    });
+    // `scroller`: a child that scrolls instead of the whole panel, so
+    // what sits beside it (a button row) stays put. The panel becomes a
+    // column that clips; the scroller takes the height that is left.
+    // min-height 0, or a flex child refuses to shrink below its content
+    // and nothing scrolls again.
+    if (scroller && scroller !== element) {
+        Object.assign(element.style, {
+            overflow: "hidden", display: "flex", flexDirection: "column",
+        });
+        Object.assign(scroller.style, {
+            flex: "1 1 auto", minHeight: "0", overflow: "auto",
+        });
+    }
+    hookPanelWheel(element, scroller ?? element);
+    const w = node.addDOMWidget(name, "div", element, { hideOnZoom: false });
+    w.serialize = false;
+    w.options.serialize = false;
+    w.computeLayoutSize = () => ({ minHeight, maxHeight: 100000, minWidth });
+    Object.defineProperty(w, "width", {
+        configurable: true, get: () => undefined, set: () => {},
+    });
+    dropWidgetSockets(node, [name]);
+    // A node configured from saved data (a workflow load, a paste, a
+    // clone) carries its size with it: mark it before anything can
+    // measure, so fitToContent leaves that size alone. On the instance,
+    // ahead of the class's own onConfigure, which still runs.
+    const configure = node.onConfigure;
+    node.onConfigure = function (...args) {
+        this.__obvpmSizeLoaded = true;
+        return configure?.apply(this, args);
+    };
+    w.fitToContent = () => fitPanel(node, w, scroller ?? element);
+    return w;
+}
+
+/** Grown to fit on its own no taller than this; past it, it scrolls. */
+const FIT_LIMIT = 600;
+
+/**
+ * Grow a NEW node so its panel shows everything -- once, and never a
+ * node whose size is the user's or the workflow's.
+ *
+ * Every hand-rolled "grow to fit" before this broke one of these rules
+ * (the user, 2026-09-24: "we go through these bugs EVERY SINGLE NODE"):
+ *
+ * - A loaded node is never resized. Its size came with the workflow --
+ *   the size the user dragged it to. A "height I set last" marker lives
+ *   only in memory, so after a reload the node looks untouched; the
+ *   Compatibility Check grew back every time it was dragged small and
+ *   reloaded. Loaded = onConfigure ran (addPanelWidget marks it).
+ * - By the MEASURED overflow (scrollHeight - clientHeight of the part
+ *   that scrolls), never by an estimate plus a margin: the overflow is
+ *   exactly what is missing and 0 when it fits, so running again adds
+ *   nothing. The estimate added its margin on top of the current height
+ *   on every run: +40 px per load in classic, +20 in Nodes 2.0.
+ * - Only while the node has the height this code last gave it: once the
+ *   user drags it, it is theirs, and the panel scrolls.
+ * - Two frames at most (the first resize can re-wrap text the second
+ *   then measures), and never past FIT_LIMIT.
+ */
+function fitPanel(node, w, scroller, tries = 2) {
+    requestAnimationFrame(() => {
+        if (!node.size || node.__obvpmSizeLoaded) return;
+        if (w.__obvpmFitHeight != null && Math.abs(node.size[1] - w.__obvpmFitHeight) >= 1) return;
+        const short = scroller.scrollHeight - scroller.clientHeight;
+        if (short > 0 && node.size[1] < FIT_LIMIT) {
+            node.setSize?.([node.size[0], Math.min(node.size[1] + short, FIT_LIMIT)]);
+            node.setDirtyCanvas?.(true, true);
+        }
+        w.__obvpmFitHeight = node.size[1];
+        if (short > 0 && tries > 1) fitPanel(node, w, scroller, tries - 1);
+    });
+}
+
+/**
+ * The wheel over a panel scrolls the panel, not the graph.
+ *
+ * The canvas takes the wheel for zoom/pan on the DOCUMENT in the capture
+ * phase and consults no node and no widget, so a scrollable element on a
+ * node never scrolls -- the graph zooms under it instead (Nodes 2.0,
+ * Compatibility Check, 2026-09-24; the same fact bit the Compose node's
+ * list on canvas, see compose_images.js). The only listener that runs
+ * before it is another document capture listener registered earlier,
+ * which this is (extensions load before the canvas is built). One
+ * listener for every panel; it scrolls the panel itself and claims the
+ * event -- also at the ends of the range, or scrolling past the last
+ * line would suddenly zoom the graph. Ctrl+wheel is left alone: that is
+ * zoom on purpose, panel or not.
+ */
+// panel -> the element in it that scrolls (the panel itself, or its
+// `scroller`): a wheel anywhere over the panel, buttons included,
+// scrolls that one and never the graph
+const panels = new Map();
+let panelWheelHooked = false;
+function hookPanelWheel(element, scroller = element) {
+    panels.set(element, scroller);
+    if (panelWheelHooked || typeof document === "undefined") return;
+    panelWheelHooked = true;
+    document.addEventListener("wheel", (e) => {
+        if (e.ctrlKey || e.metaKey) return;
+        const target = e.target;
+        if (!(target instanceof Node)) return;
+        let panel = null;
+        for (const [p, s] of panels) {
+            if (p.isConnected && p.contains(target)) { panel = s; break; }
+        }
+        if (!panel) return;
+        const canScroll = panel.scrollHeight > panel.clientHeight
+            || panel.scrollWidth > panel.clientWidth;
+        if (canScroll) {
+            // deltaMode 1 = lines, 2 = pages; pixels otherwise
+            const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? panel.clientHeight : 1;
+            panel.scrollTop += e.deltaY * unit;
+            panel.scrollLeft += e.deltaX * unit;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    }, { capture: true, passive: false });
+}
+
 // darken a CSS color by scaling its channels; plain rgb()/rgba() out so
 // every engine applies it (fancy color functions get silently rejected
 // by older CSSOMs, which leaves the property unset entirely)
@@ -187,8 +355,20 @@ export function pushButton(label, onClick, style) {
  *
  * Escape is captured (`true`) so the canvas underneath never sees it --
  * litegraph binds keys at the document level too.
+ *
+ * ONE LAYER PER ESCAPE. Open overlays form a stack and only the top one
+ * answers a key: a confirm opened over a dialog is its own overlay with
+ * its own listener on the same document, and a listener registered
+ * earlier runs first, so without the stack one press closed BOTH (the
+ * dialog underneath went with the confirm). Inside an overlay, a pop
+ * (`data-obvpm-pop`, closed through its `obvpmClose` if it has one) goes
+ * before the dialog itself. `dismiss(close)`, when given, is what
+ * Escape and a click outside do instead of closing outright -- a dialog
+ * with an edit in progress backs out of the edit first.
  */
-export function openOverlay(width, onClose) {
+const overlayStack = [];
+
+export function openOverlay(width, onClose, { dismiss } = {}) {
     const overlay = el("div", {
         position: "fixed", inset: "0", background: "rgba(0,0,0,0.55)",
         zIndex: "10000", display: "flex", alignItems: "center",
@@ -204,28 +384,44 @@ export function openOverlay(width, onClose) {
     });
     overlay.appendChild(panel);
 
+    let closed = false;
     function close() {
+        if (closed) return;
+        closed = true;
         document.removeEventListener("keydown", onKey, true);
+        const at = overlayStack.indexOf(overlay);
+        if (at >= 0) overlayStack.splice(at, 1);
         overlay.remove();
         onClose?.();
     }
+    const leave = () => (dismiss ? dismiss(close) : close());
     function onKey(ev) {
         if (ev.key !== "Escape") return;
+        // an overlay opened over this one answers its own Escape; this
+        // one must not also act on the same press (see above)
+        // (the last one still on the page: one taken off some other way
+        // than close() must not keep the ones under it deaf)
+        const live = overlayStack.filter((o) => o.isConnected);
+        if (live[live.length - 1] !== overlay) return;
         ev.stopPropagation();
+        ev.preventDefault();
         // A popup opened INSIDE this dialog (a type picker, a text
         // editor) goes first, one per press: it is marked with
         // data-obvpm-pop and sits in the overlay above the panel. Only
-        // with none open does Escape close the dialog itself.
+        // with none open does Escape reach the dialog itself.
         const pops = overlay.querySelectorAll(":scope > [data-obvpm-pop]");
         if (pops.length) {
-            pops[pops.length - 1].remove();
+            const pop = pops[pops.length - 1];
+            if (typeof pop.obvpmClose === "function") pop.obvpmClose();
+            else pop.remove();
             return;
         }
-        close();
+        leave();
     }
     overlay.addEventListener("mousedown", (ev) => {
-        if (ev.target === overlay) close();
+        if (ev.target === overlay) leave();
     });
+    overlayStack.push(overlay);
     document.addEventListener("keydown", onKey, true);
 
     return { overlay, panel, close };
