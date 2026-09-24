@@ -10,6 +10,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 - Value Presets and Switches: Fixed on ComfyUI frontend 1.53 (ComfyUI 0.37) the preset chooser and a switch's `selected` dropdown were renamed `preset#1` / `selected#1` when the node was created, after which choosing a preset changed nothing and the prompt sent the wrong input name (issue #12). 
 - Bundle: Fixed issue where if ComfyUI is set to a non-English language input pin names could use the translated output pin names of the upstream nodes causing breaks in the downstream Unbundle(s). Workflows need no changes, they will automatically work in the new version.
+- Fixed "Loading aborted due to error reloading workflow data — TypeError: Converting circular structure to JSON" when loading a workflow (for example by dropping a video or image saved from it) on ComfyUI frontend 1.52 (ComfyUI 0.36) with Nodes 2.0 enabled and a Bundle, Unbundle, Value Presets or switch node inside a subgraph (issue #13, comfyui-obvpm-timeline issue #6). The fresh slot objects handed to the Nodes 2.0 renderer are now real slots again instead of plain copies.
 
 ### 0.2.4 (2026-09-23)
 

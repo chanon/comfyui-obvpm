@@ -738,6 +738,31 @@ function slotSignature(node) {
     ].join("|");
 }
 
+/**
+ * A fresh object for a slot that is still a slot.
+ *
+ * The frontend's slot classes serialize themselves through `toJSON`; a
+ * plain `{ ...slot }` copy has no `toJSON` but still carries the slot's
+ * own `_node`, so the first JSON.stringify to reach it walks back into
+ * the node and throws "Converting circular structure to JSON". Frontend
+ * 1.52 does exactly that while configuring a subgraph instance
+ * (cloneObject over the definition's live slots), which aborted loading
+ * any workflow with a Bundle inside a subgraph when Nodes 2.0 was on.
+ * Newer frontends rehydrate plain writes through this same constructor;
+ * doing it here makes 1.52 behave the same way.
+ */
+function freshSlot(slot, node) {
+    const Ctor = slot?.constructor;
+    if (typeof Ctor === "function" && Ctor !== Object && Ctor !== Array) {
+        try {
+            const copy = new Ctor(slot, node);
+            // `new Object(x)` is x itself: not a copy, take the plain one
+            if (copy !== slot) return copy;
+        } catch (err) { /* plain copy */ }
+    }
+    return { ...slot };
+}
+
 export function notifyVue(node) {
     const signature = slotSignature(node);
     if (node.__obvpmSlotSig === signature) return;   // nothing moved
@@ -758,8 +783,8 @@ export function notifyVue(node) {
         // socket look new. The arrays are rebuilt in place, and links are
         // held by slot INDEX and by the `link` field copied here, so
         // nothing is disturbed by the change of identity.
-        if (node.inputs) node.inputs = node.inputs.map((slot) => ({ ...slot }));
-        if (node.outputs) node.outputs = node.outputs.map((s) => ({ ...s }));
+        if (node.inputs) node.inputs = node.inputs.map((s) => freshSlot(s, node));
+        if (node.outputs) node.outputs = node.outputs.map((s) => freshSlot(s, node));
         // The add hook re-extracts unconditionally and skips layout
         // creation when the node already has one, so it refreshes the
         // snapshot without disturbing position or size.
