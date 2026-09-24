@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="56" viewBox="0 0 300 56" role="img" aria-label="Support obvpm on Patreon">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff5c68"/>
+      <stop offset="1" stop-color="#e8323f"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="298" height="54" rx="12" fill="url(#g)" stroke="#b8202c" stroke-width="1"/>
+  <!-- heart -->
+  <path transform="translate(22 15)" fill="#ffffff"
+        d="M13 24 C6 18 0 13.5 0 7.5 A6.5 6.5 0 0 1 13 5 A6.5 6.5 0 0 1 26 7.5 C26 13.5 20 18 13 24 Z"/>
+  <text x="60" y="24" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#ffe9eb" letter-spacing="0.5">SUPPORT MY WORK ON</text>
+  <text x="60" y="44" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#ffffff">Patreon · obvpm</text>
+</svg>

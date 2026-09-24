@@ -1,8 +1,6 @@
 # comfyui-obvpm
 
-ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires into one wire. Create customizable presets nodes.
-
-NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
+ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires into one wire. Create customizable presets nodes. Auto compose multiple images into reference sheets.
 
 ## Updates
 
@@ -39,6 +37,12 @@ To quickly see what these nodes are useful for, you can check out these YouTube 
 - [Bundle Wires](https://www.youtube.com/watch?v=_j9aaXAmIzQ) - Lets you bundle multiple wires into a single wire
 - [Value Presets Node](https://www.youtube.com/watch?v=gRt_NdzFjTw) - Lets you creat customizable presets for any workflow
 - [Creating a Clean R2V Workflow with Customizable Presets](https://www.youtube.com/watch?v=4-TVn0TscmM) (the resulting workflow is [here](workflows/h3_obvpm_r2v.json))
+
+## Support this work
+
+If these nodes save you time, consider supporting their development on Patreon.
+
+<a href="https://www.patreon.com/cw/obvpm"><img src="assets/patreon.svg" alt="Support obvpm on Patreon" width="300"></a>
 
 ## Follow me for Updates
 
