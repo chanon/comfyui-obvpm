@@ -1,7 +1,8 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL, pushButton, openOverlay,
-         askConfirm, themePalette, dropWidgetSockets, addPanelWidget } from "./obvpm_ui.js";
+         askConfirm, themePalette, dropWidgetSockets, addPanelWidget,
+         nodeButton, nodeButtonBar, paintNodeButton } from "./obvpm_ui.js";
 
 /**
  * Compatibility Check: the rules, checked.
@@ -37,7 +38,6 @@ const NODE = "CompatibilityCheck (obvpm)";
 const RULES = "rules";
 const PANEL_NAME = "obvpm_compat_panel";
 const RED = "rgba(220,80,80,0.6)";
-const GREEN = "rgba(80,180,110,0.6)";
 const AMBER = "rgba(220,170,60,0.8)";
 const RED_TEXT = "#ff8a8a";
 const GREEN_TEXT = "#7fd49a";
@@ -63,7 +63,10 @@ async function fetchResults(rules) {
     const r = await api.fetchApi("/obvpm/compat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rules: String(rules ?? "") }),
+        // the frontend this page runs: exact, where the server only knows
+        // what it was set to serve
+        body: JSON.stringify({ rules: String(rules ?? ""),
+                               frontend: String(window.__COMFYUI_FRONTEND_VERSION__ ?? "") }),
     });
     return await r.json();
 }
@@ -177,7 +180,10 @@ function lineOf(row) {
     let body;
     switch (row.kind) {
         case "core": body = "comfyui >= " + t(row.version); break;
-        case "pack": body = t(row.name) + " >= " + t(row.version) + "   node: " + t(row.node); break;
+        case "frontend": body = "frontend >= " + t(row.version); break;
+        // an older rule's `node:` is kept as written; new ones need none
+        case "pack": body = t(row.name) + " >= " + t(row.version)
+                            + (t(row.node) ? "   node: " + t(row.node) : ""); break;
         case "node": body = "node " + t(row.name) + (t(row.input) ? " has " + t(row.input) : ""); break;
         case "no_node": body = "not node " + t(row.name); break;
         case "no_pack": body = "not pack " + t(row.name); break;
@@ -262,79 +268,169 @@ function headline(answer) {
 }
 
 /**
- * The node's face, the part that scrolls: the verdict, what fails (one
- * line each), how many passed. `frame` is what wears the red or green
- * edge (the whole panel). The buttons are not painted here: they sit
- * under this list, outside the scroll, and never change. Returns the
- * failure count.
+ * The node's face, the part that scrolls: "2 Compatibility Issues" and a
+ * block per failing rule (issueBlock), or the all-clear; then how many
+ * passed. No coloured edge around it (the user: the red / green border
+ * was too much). `frame` takes the text colour (the whole panel). The
+ * buttons are not painted here: they sit under this list, outside the
+ * scroll, and never change. Returns the failure count.
  */
 function paint(list, answer, frame = list) {
     const P = themePalette();
     list.replaceChildren();
     frame.style.color = P.text;
     if (answer?.error) {
-        frame.style.borderColor = RED;
-        list.appendChild(el("div", { fontWeight: "600" }, headline(answer)));
+        list.appendChild(el("div", { font: "700 13px sans-serif", color: RED_TEXT, paddingLeft: "4px" },
+                            "Compatibility Issues"));
+        list.appendChild(issueBlock({ title: String(answer.error) }));
         return 1;
     }
     const { results, failed, unknown } = counts(answer);
-    frame.style.borderColor = failed.length ? RED : GREEN;
-    list.appendChild(el("div", { font: "600 13px sans-serif" }, headline(answer)));
-    for (const r of failed) {
+    if (failed.length) {
+        list.appendChild(el("div", { font: "700 13px sans-serif", color: RED_TEXT, paddingLeft: "4px" },
+            failed.length + (failed.length === 1 ? " Compatibility Issue" : " Compatibility Issues")));
+        // Whose links these are, right under the heading, so it is read
+        // before the links (and never scrolled out of sight at the bottom
+        // of a long list) -- when any link shown is the author's; the
+        // fixed ComfyUI / frontend links are not.
+        const fixed = answer?.links ?? {};
+        if (failed.some((r) => r.url && !fixed[r.kind])) {
+            list.appendChild(el("div", { color: DIM, opacity: "0.75", font: "10.5px sans-serif",
+                                         paddingLeft: "4px", marginTop: "-3px" },
+                "Links come from whoever made this workflow. Check where a "
+                + "link goes before installing anything from it."));
+        }
+    } else {
         list.appendChild(el("div", {
-            paddingLeft: "8px", borderLeft: "3px solid " + RED,
-        }, "✗ " + String(r.title ?? "")));
+            font: "600 13px sans-serif", color: results.length ? GREEN_TEXT : DIM, paddingLeft: "4px",
+        }, headline(answer)));
     }
+    for (const r of failed) list.appendChild(issueBlock(r));
     const passed = results.length - failed.length - unknown.length;
     const tally = [];
-    if (passed) tally.push("✓ " + passed + (passed === 1 ? " check passed" : " checks passed"));
+    // under a list of issues the passes are the rest, not good news:
+    // "5 other checks passed", without the tick
+    if (passed) {
+        tally.push(failed.length
+            ? passed + (passed === 1 ? " other check passed" : " other checks passed")
+            : "✓ " + passed + (passed === 1 ? " check passed" : " checks passed"));
+    }
     if (unknown.length) tally.push("? " + unknown.length + " could not be checked");
-    if (tally.length) list.appendChild(el("div", { color: DIM }, tally.join(" · ")));
+    // muted like the links note under the heading: both are asides
+    if (tally.length) list.appendChild(el("div", { color: DIM, opacity: "0.75", font: "10.5px sans-serif", paddingLeft: "4px" },
+                                          tally.join(" · ")));
     return failed.length;
 }
 
-/** The face's buttons, under the list: View Details and Copy Report. */
-function faceButtons(actions = {}) {
-    return buttonRow(themePalette(), [["View Details", actions.details],
-                                      ["Copy Report", actions.report]]);
+/**
+ * One failing rule on the face, as a block of its own: what is wrong,
+ * what the workflow needs next to what is installed, and where to get
+ * it. The fix text and the note stay in View Details -- the face says
+ * what, the dialog says how.
+ */
+function issueBlock(r) {
+    const block = el("div", {
+        display: "flex", flexDirection: "column", gap: "3px",
+        padding: "6px 8px", borderRadius: "5px", marginRight: "6px",
+        background: "rgba(127,127,127,0.14)",
+    });
+    block.appendChild(el("div", { fontWeight: "600" }, "✗ " + String(r.title ?? "")));
+    const required = String(r.required ?? ""), installed = String(r.installed ?? "");
+    if (required || installed) {
+        const facts = el("div", { display: "flex", flexWrap: "wrap", columnGap: "14px", rowGap: "2px" });
+        const fact = (label, value) => {
+            const line = el("span", {});
+            line.append(el("span", { color: DIM }, label + " "), el("span", {}, value));
+            return line;
+        };
+        if (required) facts.appendChild(fact("Required", required));
+        if (installed) facts.appendChild(fact("Installed", installed));
+        block.appendChild(facts);
+    } else if (r.detail) {
+        // a line that cannot be read has no versions: say what is wrong
+        block.appendChild(el("div", { color: DIM, overflowWrap: "anywhere" }, String(r.detail)));
+    }
+    const link = linkOf(r.link || r.url);
+    if (link) {
+        // the canvas starts a drag on pointerdown: keep it off the link
+        link.addEventListener?.("pointerdown", (ev) => ev.stopPropagation());
+        Object.assign(link.style, { whiteSpace: "normal", overflowWrap: "anywhere",
+                                    alignSelf: "flex-start" });
+        block.appendChild(link);
+    }
+    return block;
 }
 
-/** The face's buttons: small, in the node's own chrome colours. */
-function buttonRow(P, specs) {
-    const row = el("div", { display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "2px" });
-    for (const [label, run] of specs) {
-        const b = document.createElement("button");
-        b.textContent = label;
-        Object.assign(b.style, {
-            cursor: "pointer", padding: "2px 8px", borderRadius: "4px",
-            border: "1px solid " + P.edge, background: P.rest, color: P.text,
-            font: "11px sans-serif",
-        });
-        b.addEventListener("click", (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            run?.();
-        });
-        row.appendChild(b);
-    }
-    return row;
+/** The face's buttons, under the list: View Details and Copy Report, in
+ *  the pack's one face-button look (obvpm_ui.js nodeButton: Value
+ *  Presets' row). Never styled by hand here. */
+function faceButtons(actions = {}) {
+    return nodeButtonBar([nodeButton("view details", () => actions.details?.()),
+                          nodeButton("copy report", () => actions.report?.())]);
 }
 
 // ---------------------------------------------------------------------
 // The tables
 // ---------------------------------------------------------------------
 
+/** Does the answer show anything the workflow's author wrote: a link that
+ *  is not a fixed one, or a note? */
+function authored(answer) {
+    const fixed = answer?.links ?? {};
+    const results = Array.isArray(answer?.results) ? answer.results : [];
+    return results.some((r) => (r.url && !fixed[r.kind]) || String(r.note ?? "").trim());
+}
+
+/** Shown for a link at most this long; only the path is ever cut. */
+const LINK_TEXT = 44;
+
+/**
+ * A rule's link, shown so that where it GOES is what it SAYS.
+ *
+ * Links come from the workflow's author, so the text must not be able
+ * to pass one site off as another (security review, 2026-09-24). The
+ * address is parsed, never displayed as typed:
+ * - the host is shown in full, never cut: cutting the text at a fixed
+ *   length let `github.com-comfy-org-comfyui-manager-release.evil.example`
+ *   show as `github.com-comfy-org-comfyui-manager-relea…`;
+ * - the host is the parser's, which spells an internationalised name in
+ *   punycode (`xn--…`), so a Cyrillic look-alike of github.com does not
+ *   read as github.com;
+ * - a link with a user name or password in it (`https://github.com@evil
+ *   .example/`, which goes to evil.example) is not made a link at all;
+ * - only http(s) is ever a link, and only to github.com (the user's
+ *   call: node packs live there, and one allowed site is one a reader
+ *   can check at a glance). Any other address is shown, not linked.
+ * Anything refused is shown as plain dim text. The full address is the
+ * hover text.
+ */
+const LINK_HOSTS = new Set(["github.com", "www.github.com"]);
+
 function linkOf(url) {
-    const text = String(url ?? "");
+    const text = String(url ?? "").trim();
     if (!text) return "";
-    if (!/^https?:\/\//i.test(text)) return el("span", { color: DIM }, text);
+    let parsed = null;
+    try {
+        parsed = new URL(text);
+    } catch (err) {
+        parsed = null;
+    }
+    if (!parsed || !/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password
+        || !LINK_HOSTS.has(parsed.hostname)) {
+        const plain = el("span", { color: DIM, overflowWrap: "anywhere" }, text);
+        plain.title = "Not a link: only github.com addresses are opened from here.";
+        return plain;
+    }
+    const host = parsed.hostname.replace(/^www\./, "") + (parsed.port ? ":" + parsed.port : "");
+    let path = (parsed.pathname + parsed.search + parsed.hash).replace(/\/$/, "");
+    const room = Math.max(8, LINK_TEXT - host.length);
+    if (path.length > room) path = path.slice(0, room - 1) + "…";
     const a = document.createElement("a");
-    a.href = text;
+    a.href = parsed.href;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
-    a.title = text;
-    const short = text.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
-    a.textContent = (short.length > 44 ? short.slice(0, 43) + "…" : short) + " ↗";
+    a.title = parsed.href;
+    a.textContent = host + path + " ↗";
     Object.assign(a.style, { color: "#7ab8ff", textDecoration: "underline",
                              whiteSpace: "nowrap" });
     return a;
@@ -352,9 +448,21 @@ const RESULT = { label: "Result", view: (row, r) => badge(r),
                  tip: "How this rule came out when it was last checked." };
 const INSTALLED = { label: "Installed", view: (row, r) => String(r?.installed ?? ""),
                     tip: "What this install has." };
-const LINK = { label: "Link", field: "url", placeholder: "https://…", min: "190px",
+const LINK = { label: "Link", field: "url", placeholder: "https://github.com/…", min: "190px",
                view: (row) => linkOf(row.url),
-               tip: "Where to get it: shown with the result, opens in a new tab." };
+               tip: "Where to get it (github.com): shown with the result, opens in a new tab." };
+// A pack's URL is its IDENTITY too: the installed pack is found by it
+// (pyproject [project.urls] / git origin), else by name.
+const REPO = { label: "Repository", field: "url", placeholder: "https://github.com/owner/repo",
+               min: "220px", view: (row) => linkOf(row.url),
+               tip: "The pack's GitHub repository: how the installed pack is found "
+                  + "(else by its name), and the link shown." };
+// ComfyUI and the frontend link to their fixed homes (compat.py
+// FIXED_LINKS, sent with every answer as `links`): not editable, and it
+// follows the row's Part when that changes (`live`).
+const FIXED_LINK = { label: "Link", live: true,
+                     view: (row, r, ctx) => linkOf(ctx?.links?.[row.kind] || r?.link || ""),
+                     tip: "Where to get it: fixed for ComfyUI and its frontend." };
 // A note can run to a sentence or two, too much for a column: the cell
 // is a button that opens it (and, while editing, edits it).
 const NOTE = { label: "Note", note: true,
@@ -362,28 +470,28 @@ const NOTE = { label: "Note", note: true,
 
 const GROUPS = [
     {
-        title: "ComfyUI", kinds: ["core"], add: "core", single: true,
-        about: "The oldest ComfyUI the workflow runs on.",
+        // one row per kind at most: ComfyUI itself and its frontend
+        title: "ComfyUI", kinds: ["core", "frontend"], add: "core", single: true,
+        about: "The oldest ComfyUI and frontend the workflow runs on.",
         columns: [RESULT,
+            { label: "Part", field: "kind", choices: [["core", "ComfyUI"], ["frontend", "Frontend"]],
+              view: (row) => (row.kind === "frontend" ? "Frontend" : "ComfyUI"),
+              tip: "ComfyUI itself, or its frontend (the web page; its version is in "
+                 + "Settings > About)." },
             { label: "Required version", field: "version", placeholder: "0.35.0", min: "90px",
               view: (row, r) => String(r?.required ?? (row.version ? ">= " + row.version : "")) },
-            INSTALLED, LINK, NOTE],
+            INSTALLED, FIXED_LINK, NOTE],
     },
     {
         title: "Node packs", kinds: ["pack"], add: "pack",
-        about: "The oldest version of a pack that works. The pack is found by a node it "
-             + "registers, and its version is read from the pack's pyproject.toml.",
+        about: "The oldest version of a pack that works, read from its pyproject.toml. "
+             + "The pack is found by its repository, else by its name or folder.",
         columns: [RESULT,
             { label: "Pack", field: "name", placeholder: "comfyui-some-pack", min: "160px",
               view: (row) => row.name },
             { label: "Required version", field: "version", placeholder: "1.2.0", min: "80px",
               view: (row, r) => String(r?.required ?? (row.version ? ">= " + row.version : "")) },
-            INSTALLED,
-            { label: "Found by node", field: "node", placeholder: "a node id the pack registers",
-              min: "190px", view: (row) => el("span", { color: DIM }, row.node),
-              tip: "A node id the pack registers: how the installed pack is found, "
-                 + "whatever its folder is called." },
-            LINK, NOTE],
+            INSTALLED, REPO, NOTE],
     },
     {
         title: "Nodes", kinds: ["node"], add: "node",
@@ -398,12 +506,12 @@ const GROUPS = [
     },
     {
         title: "Must not be installed", kinds: ["no_node", "no_pack"], add: "no_pack",
-        about: "A pack (by its folder name under custom_nodes) or a node whose pack "
-             + "breaks the workflow when it is installed.",
+        about: "A pack (by its repository, else its name or folder) or a node whose "
+             + "pack breaks the workflow when it is installed.",
         columns: [RESULT,
             { label: "Kind", field: "kind", choices: [["no_pack", "pack"], ["no_node", "node"]],
               view: (row) => (row.kind === "no_node" ? "node" : "pack") },
-            { label: "Name", field: "name", placeholder: "FolderName or NodeId", min: "170px",
+            { label: "Name", field: "name", placeholder: "pack name or NodeId", min: "170px",
               view: (row) => row.name },
             INSTALLED, LINK, NOTE],
     },
@@ -530,6 +638,12 @@ function section(group, list, mode, hooks = {}) {
                 : isChanged(entry) ? el("span", { color: AMBER_TEXT }, "edited")
                 : badge(result));
             let statusCell = null;
+            const live = [];            // [cell, column] that follow the row's fields
+            const fill = (td, col) => {
+                const shown = col.view(row, result, hooks);
+                if (shown && typeof shown === "object") td.replaceChildren(shown);
+                else td.textContent = String(shown ?? "");
+            };
             const touched = () => {
                 // the server's complaint was about the old text
                 if (entry.problem) {
@@ -538,6 +652,7 @@ function section(group, list, mode, hooks = {}) {
                     for (const x of extra) x.remove();
                 }
                 statusCell?.replaceChildren(status());
+                for (const [td, col] of live) fill(td, col);
                 hooks.changed?.();
             };
             for (const col of group.columns) {
@@ -551,10 +666,9 @@ function section(group, list, mode, hooks = {}) {
                     td.appendChild(status());
                 } else if (col.field) td.appendChild(cellInput(col, entry, touched));
                 else {
-                    const shown = col.view(row, result);
-                    if (shown && typeof shown === "object") td.appendChild(shown);
-                    else td.textContent = String(shown ?? "");
-                    td.style.color = DIM;
+                    fill(td, col);
+                    if (col.live) live.push([td, col]);
+                    else td.style.color = DIM;
                 }
                 tr.appendChild(td);
             }
@@ -582,7 +696,7 @@ function section(group, list, mode, hooks = {}) {
                 continue;
             }
             const td = el("td", { ...CELL });
-            const shown = col.view(row, result);
+            const shown = col.view(row, result, hooks);
             if (shown && typeof shown === "object") td.appendChild(shown);
             else td.textContent = String(shown ?? "");
             tr.appendChild(td);
@@ -605,7 +719,8 @@ function section(group, list, mode, hooks = {}) {
         }
     }
     // one ComfyUI rule is all there can usefully be
-    if (editing && group.add && !(group.single && list.length)) {
+    const full = group.single && group.kinds.every((k) => list.some((e) => e.row.kind === k));
+    if (editing && group.add && !full) {
         const add = pushButton("+ Add", () => hooks.add?.(group),
                                { alignSelf: "flex-start", padding: "2px 10px",
                                  font: "12px sans-serif" });
@@ -674,6 +789,7 @@ function openNotePop(overlay, { title, text, onSave }) {
 /** What a row is about, for a pop's title: "Note: comfyui-obvpm". */
 function thingOf(row) {
     if (row.kind === "core") return "ComfyUI";
+    if (row.kind === "frontend") return "the frontend";
     return String(row.name ?? "").trim() || "this rule";
 }
 
@@ -703,15 +819,16 @@ function openTextPop(overlay, text, { title, applyLabel, onApply }) {
     });
     area.value = text;
     area.spellcheck = false;
-    area.placeholder = "comfyui >= 0.35.0\nsome-pack >= 1.2.0   node: SomeNode   https://…\nnode SomeNode has some_input   https://…   # the original, not a fork\nnot pack Some-Pack   # breaks this workflow when installed";
+    area.placeholder = "comfyui >= 0.35.0\nfrontend >= 1.53.0\nsome-pack >= 1.2.0   https://github.com/owner/some-pack\nnode SomeNode has some_input   https://github.com/…   # the original, not a fork\nnot pack https://github.com/owner/bad-pack   # breaks this workflow when installed";
     const legend = el("div", { color: DIM, font: "12px sans-serif" },
-        "One requirement per line: comfyui >= 0.35.0 · some-pack >= 1.2.0 "
-        + "node: NodeId (a node the pack registers; its version is read from "
-        + "the pack's pyproject) · node NodeId · node NodeId has input_name "
-        + "(tells a same-name fork apart) · not node NodeId / not pack "
-        + "FolderName (a pack that breaks the workflow when installed). A "
-        + "URL on the line becomes the link; text after ' #' is shown with "
-        + "the result. Lines starting with # are comments.");
+        "One requirement per line: comfyui >= 0.35.0 · frontend >= 1.53.0 · some-pack >= 1.2.0 "
+        + "https://github.com/owner/repo (found by that repository, else by its "
+        + "name; its version is read from its pyproject.toml) · node NodeId · "
+        + "node NodeId has input_name (tells a same-name fork apart) · not node "
+        + "NodeId / not pack Name or repository URL (a pack that breaks the "
+        + "workflow when installed). A github.com URL on the line becomes the "
+        + "link; text after ' #' is shown with the result. Lines starting with "
+        + "# are comments.");
     const message = el("div", { color: RED_TEXT, font: "12px sans-serif" });
     const close = () => pop.remove();
     const apply = pushButton(applyLabel, async () => {
@@ -750,7 +867,7 @@ function openTextPop(overlay, text, { title, applyLabel, onApply }) {
  * question first if something was changed), then the dialog.
  */
 function openDetails(node, ctx) {
-    const state = { mode: "view", entries: [], baseline: "", banner: "" };
+    const state = { mode: "view", entries: [], baseline: "", banner: "", links: null };
     const { overlay, panel, close } = openOverlay("min(1120px, 96vw)", null, {
         dismiss: (closeDialog) => {
             if (state.mode === "edit") void cancelEdit();
@@ -761,6 +878,7 @@ function openDetails(node, ctx) {
     const body = el("div", {
         flex: "1 1 auto", minHeight: "0", overflow: "auto",
         display: "flex", flexDirection: "column", gap: "28px", paddingRight: "4px",
+        paddingTop: "12px",             // room above the first table's heading
     });
     const foot = el("div", { display: "flex", flexWrap: "wrap", gap: "6px",
                              alignItems: "center" });
@@ -859,7 +977,12 @@ function openDetails(node, ctx) {
     }
 
     function addRow(group) {
-        const entry = { row: rowOf({ kind: group.add, rule: "" }), fresh: true };
+        // a one-per-kind table adds the kind it does not have yet
+        const present = new Set(state.entries.filter((e) => e.row && !e.removed)
+                                             .map((e) => e.row.kind));
+        const kind = group.single ? (group.kinds.find((k) => !present.has(k)) ?? group.add)
+                                  : group.add;
+        const entry = { row: rowOf({ kind, rule: "" }), fresh: true };
         // after the last rule of the same kind, so the text stays grouped
         // the way it was written; at the end when there is none
         let at = -1;
@@ -901,11 +1024,17 @@ function openDetails(node, ctx) {
                 if (answer?.error) return String(answer.error);
                 if (!Array.isArray(answer?.lines)) return "The server did not answer with the lines.";
                 state.entries = entriesOf(answer.lines, answer.results);
+                if (answer.links) state.links = answer.links;
                 state.banner = "";
                 render();
                 return null;
             },
         });
+    }
+
+    /** ComfyUI's and the frontend's fixed links, as the server last sent them. */
+    function linksNow() {
+        return state.links ?? ctx.answer()?.links ?? {};
     }
 
     function render() {
@@ -927,6 +1056,14 @@ function openDetails(node, ctx) {
             }, headline(answer).replace(/:$/, ".")));
         }
         head.appendChild(heading);
+        // The links and notes are the workflow author's words, shown in a
+        // panel that reads as authoritative: say so, where there are any
+        // (ComfyUI's and the frontend's links are fixed, not the author's).
+        if (!editing && authored(answer)) {
+            head.appendChild(el("div", { color: DIM, font: TEXT, marginTop: "2px" },
+                "Links and notes come from whoever made this workflow. Check where a "
+                + "link goes before installing anything from it."));
+        }
         if (editing && state.banner) {
             head.appendChild(el("div", {
                 color: RED_TEXT, font: "600 13px sans-serif", padding: "6px 8px",
@@ -941,7 +1078,7 @@ function openDetails(node, ctx) {
                                                   && group.kinds.includes(e.row.kind));
                 if (!group.add && !list.length) continue;
                 body.appendChild(section(group, list, "edit", {
-                    add: addRow, remove: removeRow, note: showNote,
+                    add: addRow, remove: removeRow, note: showNote, links: linksNow(),
                 }));
             }
         } else {
@@ -951,7 +1088,7 @@ function openDetails(node, ctx) {
                 const list = results.filter((r) => group.kinds.includes(r.kind))
                     .sort((a, b) => order(a) - order(b))
                     .map((r) => ({ row: rowOf(r), result: r }));
-                if (list.length) body.appendChild(section(group, list, "view", { note: showNote }));
+                if (list.length) body.appendChild(section(group, list, "view", { note: showNote, links: linksNow() }));
             }
             if (!results.length && !answer?.error) {
                 body.appendChild(el("div", { color: DIM },
@@ -1008,9 +1145,7 @@ function setup(node) {
     // still works: the store is the widget either way)
     dropWidgetSockets(node, [RULES]);
     const panel = el("div", {
-        gap: "6px", padding: "8px 10px",
-        border: "1px solid " + RED, borderRadius: "6px",
-        background: "rgba(127,127,127,0.06)", font: "12px sans-serif",
+        gap: "6px", padding: "0 2px 4px", font: "12px sans-serif",   // no top padding: the title bar is right above
     });
     // the results scroll; the buttons under them stay where they are
     const list = el("div", { display: "flex", flexDirection: "column", gap: "6px" });
@@ -1022,7 +1157,7 @@ function setup(node) {
     // has resized it (see refresh).
     // A new node grows once to show the list (fitToContent); a loaded
     // one keeps the size it was saved with.
-    const panelWidget = addPanelWidget(node, PANEL_NAME, panel, { minHeight: 80, scroller: list });
+    const panelWidget = addPanelWidget(node, PANEL_NAME, panel, { minHeight: 80, scroller: list, margin: 6 });
 
     let answer = null;
     const ctx = {
@@ -1055,6 +1190,8 @@ function setup(node) {
             if (String(rules?.value ?? "") !== text) return refresh();   // stale
             answer = got;
             paint(list, answer, panel);
+            // the palette is resolved colours: follow a theme change
+            for (const b of buttons.children) paintNodeButton(b);
             panelWidget.fitToContent?.();
         })();
         return inFlight;

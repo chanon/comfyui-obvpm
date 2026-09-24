@@ -6,7 +6,8 @@ import { api } from "../../scripts/api.js";
 // palette (the bundle config and Load Images & Compose use them too).
 import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL,
          textBox, pushButton, openOverlay, askText, askConfirm, notice,
-         dropWidgetSockets, themePalette, valueTooltip } from "./obvpm_ui.js";
+         dropWidgetSockets, themePalette, valueTooltip,
+         NODE_BUTTON, NODE_BUTTON_HOVER } from "./obvpm_ui.js";
 
 /**
  * Value Presets: a control per schema field, and named sets of them.
@@ -1280,19 +1281,11 @@ function rowHeight() {
 // darkened mix of it, per-theme ink. Copying mkBtn verbatim copied the
 // layer that never reaches the screen. So: shape here, colors from the
 // SAME themePalette() at paint time.
-const BTN_SHAPE = {
-    borderRadius: "4px", padding: "2px 8px", cursor: "pointer",
-    whiteSpace: "nowrap", borderWidth: "1px", borderStyle: "solid",
-    // explicit line-height, as in mkBtn: without it button heights
-    // drift with the glyphs in their labels. Below the timeline's 12px
-    // -- these five are secondary to the fields above them -- with the
-    // line-height kept at 18 so the 24px row budget (and the row budget with
-    // it) is untouched.
-    font: "10px/18px sans-serif",
-    height: "24px", boxSizing: "border-box",
-};
-// snapBtn's off-state hover, the only hover the timeline's chrome has
-const BTN_HOVER = "rgba(127,127,127,0.3)";
+// The pack's face-button look lives in obvpm_ui.js (NODE_BUTTON, taken
+// from this row) so every node's face buttons match; the row budget
+// above assumes its 24 px height.
+const BTN_SHAPE = NODE_BUTTON;
+const BTN_HOVER = NODE_BUTTON_HOVER;
 
 /**
  * What the row offers right now.

@@ -33,7 +33,7 @@ async function harness() {
         if (name.endsWith("scripts/app.js")) mod = mock({ app });
         else if (name.endsWith("scripts/api.js")) mod = mock({ api });
         else if (name === "obvpm_ui.js") mod = mock({ themePalette: () => ({}), el: noop,
-            ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets", "addPanelWidget", "valueTooltip", "askText", "askConfirm", "notice"].map(k => [k, noop])),
+            ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets", "addPanelWidget", "valueTooltip", "askText", "askConfirm", "notice", "NODE_BUTTON", "NODE_BUTTON_HOVER", "nodeButton", "nodeButtonBar", "paintNodeButton"].map(k => [k, noop])),
             legacyCanvasBox: (ctx, w, h) => [w, h] });
         else if (name === "obvpm_artius.js") mod = mock({ ARTIUS_MIME: "test/artius", ARTIUS_ROUTE_BASE: "/artius", artiusRelativePath: () => null, readArtiusAssets: () => null });
         else if (name === "obvpm_bundle_config.js") mod = mock(Object.fromEntries(["addConfigButton", "applyUnbundleLayout", "hasUnbundleLayout", "openBundleConfig", "openUnbundleConfig"].map(k => [k, noop])));

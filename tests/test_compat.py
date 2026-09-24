@@ -75,8 +75,9 @@ class Parsing(unittest.TestCase):
             self.assertEqual(compat.parse_rules(line)[0].kind, "error", line)
 
     def test_a_line_that_cannot_be_read_is_a_failing_rule_not_a_refusal(self):
-        for line, why in (("obvpm >= 0.2.3", "needs  node:"),
-                          ("comfyui >= new", "not written like 1.2.3"),
+        # a pack rule no longer needs `node:` -- it is found by repository or name
+        self.assertEqual(compat.parse_rules("obvpm >= 0.2.3")[0].kind, "pack")
+        for line, why in (("comfyui >= new", "not written like 1.2.3"),
                           ("something else entirely", "not a rule this node knows"),
                           ("node", "names no node"),
                           ("node X has ", "missing the node or the input"),
@@ -117,40 +118,28 @@ class Checking(unittest.TestCase):
                 self.assertIn("Update ComfyUI", rule.fix)
 
     def test_pack_by_version(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with open(os.path.join(tmp, "pyproject.toml"), "w") as fh:
-                fh.write('[project]\nversion = "0.2.2"\n')
-            mod = module_at("obvpm_testpack._pack", os.path.join(tmp, "presets.py"))
-            cls = type("ValuePresets", (), {"__module__": mod.__name__})
-            reg = {"ValuePresets (obvpm)": cls}
-            rule = compat.check("comfyui-obvpm >= 0.2.3 node: ValuePresets (obvpm) https://x.y/z", reg)[0]
+        with Install({"comfyui-obvpm": dict(name="comfyui-obvpm", version="0.2.2",
+                                            repo="https://github.com/chanon/comfyui-obvpm")}):
+            rule = compat.check("comfyui-obvpm >= 0.2.3 https://github.com/chanon/comfyui-obvpm", {})[0]
             self.assertFalse(rule.ok)
             self.assertEqual(rule.title, "comfyui-obvpm needs updating")
-            self.assertIn("0.2.2 is installed", rule.detail)
+            self.assertIn("0.2.2 is installed (custom_nodes/comfyui-obvpm)", rule.detail)
             self.assertIn("Update", rule.fix)
-            self.assertEqual(rule.result()["url"], "https://x.y/z")
-            rule = compat.check("comfyui-obvpm >= 0.2.2 node: ValuePresets (obvpm)", reg)[0]
+            rule = compat.check("comfyui-obvpm >= 0.2.2", {})[0]
             self.assertTrue(rule.ok)
             self.assertEqual(rule.title, "comfyui-obvpm 0.2.2")
 
     def test_pack_missing_or_without_a_version(self):
-        rule = compat.check("some-pack >= 1.0 node: SomeNode", {})[0]
-        self.assertFalse(rule.ok)
-        self.assertEqual(rule.title, "some-pack is not installed")
-        cls = type("SomeNode", (), {"__module__": "obvpm_testpack._nowhere"})
-        rule = compat.check("some-pack >= 1.0 node: SomeNode", {"SomeNode": cls})[0]
-        self.assertTrue(rule.ok, "an unreadable version does not block")
-        self.assertIn("version unknown", rule.title)
+        with Install({"other": dict(name="other", version="1.0.0")}):
+            rule = compat.check("some-pack >= 1.0 https://github.com/someone/some-pack", {})[0]
+            self.assertFalse(rule.ok)
+            self.assertEqual(rule.title, "some-pack is not installed")
+            self.assertIn("github.com/someone/some-pack", rule.detail)
+        with Install({"some-pack": dict(name="some-pack")}):       # no version in it
+            rule = compat.check("some-pack >= 1.0", {})[0]
+            self.assertTrue(rule.ok, "an unreadable version does not block")
+            self.assertIn("version unknown", rule.title)
 
-    def test_pack_version_stops_under_custom_nodes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with open(os.path.join(tmp, "pyproject.toml"), "w") as fh:
-                fh.write('version = "9.9.9"\n')       # stands for ComfyUI's
-            os.makedirs(os.path.join(tmp, "custom_nodes", "pack", "nodes"))
-            mod = module_at("obvpm_testpack._nopy",
-                            os.path.join(tmp, "custom_nodes", "pack", "nodes", "m.py"))
-            cls = type("N", (), {"__module__": mod.__name__})
-            self.assertIsNone(compat.pack_version(cls))
 
     def test_node_present_and_node_has_input(self):
         reg = {"MinimaxH3LatentUpscaler3D": node_with_inputs(
@@ -280,12 +269,91 @@ class TheNode(unittest.TestCase):
     def test_results_are_json_shaped_for_the_widget(self):
         d = compat.check("node Missing https://x.y # n", {})[0].result()
         self.assertEqual(sorted(d), ["detail", "fix", "input_name", "installed", "kind",
-                                     "line", "name", "node", "note", "ok", "required",
+                                     "line", "link", "name", "node", "note", "ok", "required",
                                      "rule", "state", "title", "url", "version"])
         self.assertEqual(d["ok"], False)
         self.assertEqual(d["state"], "fail")
         self.assertEqual(d["installed"], "not installed")
         self.assertEqual(d["required"], "installed")
+        self.assertEqual(d["link"], "https://x.y")
+
+    def test_comfyui_and_the_frontend_always_link_to_their_repos(self):
+        core("0.30.0")
+        try:
+            plain, own = compat.check("comfyui >= 0.35.0\ncomfyui >= 0.35.0 https://x.y/fork", {})
+        finally:
+            del sys.modules["comfyui_version"]
+        self.assertEqual((plain.url, plain.result()["link"]),
+                         ("", "https://github.com/comfy-org/comfyui"))
+        self.assertIn("See: https://github.com/comfy-org/comfyui", plain.as_text(),
+                      "the run-time refusal names it too")
+        # fixed: a URL on the line does not replace it (and is kept in the text)
+        self.assertEqual((own.url, own.result()["link"]),
+                         ("https://x.y/fork", "https://github.com/comfy-org/comfyui"))
+        fe = compat.check("frontend >= 1.0.0", {}, frontend="1.0.0")[0].result()
+        self.assertEqual(fe["link"], "https://github.com/comfy-org/ComfyUI_frontend")
+        # everything else links to what its line says, or nothing
+        self.assertEqual(compat.check("node Missing", {})[0].result()["link"], "")
+        self.assertEqual(compat.check("node Missing https://x.y/m", {})[0].result()["link"], "https://x.y/m")
+        self.assertEqual(set(compat.FIXED_LINKS), {"core", "frontend"})
+
+
+class Frontend(unittest.TestCase):
+    """`frontend >= X`: the page's own version when a page asks, else the
+    one the server serves; unknown passes."""
+
+    def setUp(self):
+        self._served = compat.served_frontend_version
+
+    def tearDown(self):
+        compat.served_frontend_version = self._served
+
+    def test_parse_forms(self):
+        for line in ("frontend >= 1.53.0", "Frontend >= 1.53", "comfyui-frontend-package >= v1.53.0"):
+            rule = compat.parse_rules(line)[0]
+            self.assertEqual((rule.kind, rule.name, rule.version), ("frontend", "Frontend", (1, 53, 0)), line)
+        self.assertEqual(compat.parse_rules("frontend >= 1.53.0")[0].required(), ">= 1.53.0")
+
+    def test_the_page_version_wins_over_the_served_one(self):
+        compat.served_frontend_version = lambda: ((1, 54, 0), "1.54.0")
+        rule = compat.check("frontend >= 1.53.0 https://x.y/fe", {}, frontend="1.52.7")[0]
+        self.assertFalse(rule.ok)
+        self.assertEqual(rule.title, "The frontend is too old")
+        self.assertIn("1.52.7", rule.detail)
+        self.assertEqual(rule.installed, "1.52.7")
+        self.assertIn("requirements", rule.fix)
+        self.assertEqual(rule.result()["state"], "fail")
+
+    def test_run_time_uses_the_served_version_and_unknown_passes(self):
+        compat.served_frontend_version = lambda: ((1, 53, 6), "1.53.6")
+        rule = compat.check("frontend >= 1.53.0", {})[0]
+        self.assertTrue(rule.ok)
+        self.assertEqual((rule.title, rule.installed), ("Frontend 1.53.6", "1.53.6"))
+        compat.served_frontend_version = lambda: (None, "")
+        rule = compat.check("frontend >= 1.53.0", {}, frontend="not-a-version")[0]
+        self.assertTrue(rule.ok)
+        self.assertEqual((rule.result()["state"], rule.installed), ("unknown", "unknown"))
+
+    def test_served_version_follows_the_startup_flags(self):
+        cli = types.ModuleType("comfy.cli_args")
+        cli.DEFAULT_VERSION_STRING = "comfyanonymous/ComfyUI@latest"
+        cli.args = types.SimpleNamespace(front_end_root=None,
+                                         front_end_version="Comfy-Org/ComfyUI_frontend@v1.54.7")
+        comfy = sys.modules.get("comfy") or types.ModuleType("comfy")
+        saved = {k: sys.modules.get(k) for k in ("comfy", "comfy.cli_args")}
+        sys.modules["comfy"], sys.modules["comfy.cli_args"] = comfy, cli
+        try:
+            self.assertEqual(compat.served_frontend_version(), ((1, 54, 7), "1.54.7"))
+            cli.args.front_end_version = "Comfy-Org/ComfyUI_frontend@latest"
+            self.assertEqual(compat.served_frontend_version(), (None, ""))
+            cli.args.front_end_root = "C:/some/folder"
+            self.assertEqual(compat.served_frontend_version(), (None, ""))
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    sys.modules.pop(k, None)
+                else:
+                    sys.modules[k] = v
 
 
 class Tables(unittest.TestCase):
@@ -313,18 +381,12 @@ class Tables(unittest.TestCase):
                          ("no_pack", "Enc", "not installed", "not installed"))
 
     def test_installed_says_what_was_found(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with open(os.path.join(tmp, "pyproject.toml"), "w") as fh:
-                fh.write('version = "0.2.5"\n')
-            mod = module_at("obvpm_testpack._tables", os.path.join(tmp, "n.py"))
-            reg = {"VP": type("VP", (), {"__module__": mod.__name__}),
-                   "U": node_with_inputs("device"),
-                   "Q": type("Q", (), {"__module__": "obvpm_testpack._nowhere"})}
+        reg = {"U": node_with_inputs("device")}
+        with Install({"p": dict(name="p", version="0.2.5"), "q": dict(name="q")}):
             got = {r.text: r.result() for r in compat.check(
-                "p >= 0.3 node: VP\nq >= 1.0 node: Q\nnode U has chunking\nnode U\nnode Z", reg)}
-        self.assertEqual((got["p >= 0.3 node: VP"]["installed"], got["p >= 0.3 node: VP"]["state"],
-                          got["p >= 0.3 node: VP"]["node"]), ("0.2.5", "fail", "VP"))
-        self.assertEqual((got["q >= 1.0 node: Q"]["installed"], got["q >= 1.0 node: Q"]["state"]),
+                "p >= 0.3\nq >= 1.0\nnode U has chunking\nnode U\nnode Z", reg)}
+        self.assertEqual((got["p >= 0.3"]["installed"], got["p >= 0.3"]["state"]), ("0.2.5", "fail"))
+        self.assertEqual((got["q >= 1.0"]["installed"], got["q >= 1.0"]["state"]),
                          ("version unknown", "unknown"))
         self.assertEqual(got["node U has chunking"]["installed"], "installed, without chunking")
         self.assertEqual(got["node U"]["installed"], "installed")
@@ -339,6 +401,10 @@ class Tables(unittest.TestCase):
     def test_the_lines_the_table_writes_read_back_as_the_same_rule(self):
         # the exact strings tests/test_compat_check.mjs asserts lineOf makes
         cases = {
+            "comfyui-kjnodes >= 1.1.0   https://github.com/kijai/ComfyUI-KJNodes   # Set/Get":
+                ("pack", "comfyui-kjnodes", "1.1.0", "", "", "https://github.com/kijai/ComfyUI-KJNodes", "Set/Get"),
+            "frontend >= 1.53.0   # Nodes 2.0 fixes":
+                ("frontend", "Frontend", "1.53.0", "", "", "", "Nodes 2.0 fixes"),
             "comfyui >= 0.35.0   https://x.y/c   # core note":
                 ("core", "ComfyUI", "0.35.0", "", "", "https://x.y/c", "core note"),
             "comfyui-obvpm >= 0.2.5   node: ValuePresets (obvpm)   https://github.com/chanon/comfyui-obvpm":
@@ -358,6 +424,157 @@ class Tables(unittest.TestCase):
             r = d.result()
             self.assertEqual((r["kind"], r["name"], r["version"], r["node"], r["input_name"],
                               r["url"], r["note"]), want, line)
+
+
+
+class Packs(unittest.TestCase):
+    """How a pack rule finds the installed pack: its repository (pyproject
+    [project.urls] or git origin), else its pyproject name or folder."""
+
+    def test_repository_urls_compare_however_written(self):
+        key = "github.com/kijai/comfyui-kjnodes"
+        for url in ("https://github.com/kijai/ComfyUI-KJNodes", "https://www.github.com/kijai/ComfyUI-KJNodes/",
+                    "http://github.com/kijai/ComfyUI-KJNodes.git", "git@github.com:kijai/ComfyUI-KJNodes.git",
+                    "https://github.com/kijai/ComfyUI-KJNodes/tree/main/nodes", "ssh://git@github.com/kijai/ComfyUI-KJNodes"):
+            self.assertEqual(compat.normalize_repo(url), key, url)
+        for junk in ("", "not a url", "https://github.com/", "https://github.com/onlyowner", "file:///C:/x/y"):
+            self.assertEqual(compat.normalize_repo(junk), "", junk)
+
+    def test_found_by_repository_whatever_the_folder_or_name(self):
+        packs = {"ComfyUI-KJNodes-renamed": dict(name="something-else", version="1.2.0",
+                                                 repo="https://github.com/kijai/ComfyUI-KJNodes")}
+        with Install(packs):
+            rule = compat.check("comfyui-kjnodes >= 1.1.0 https://github.com/kijai/ComfyUI-KJNodes", {})[0]
+        self.assertTrue(rule.ok)
+        self.assertEqual(rule.result()["state"], "ok")
+        self.assertIn("custom_nodes/ComfyUI-KJNodes-renamed", rule.detail)
+
+    def test_found_by_git_origin_when_the_pack_has_no_pyproject(self):
+        with Install({"Comfyui_Minimax_h3_latent_Upscaler": dict(
+                git="https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler")}):
+            rule = compat.check("upscaler >= 1.0 https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler", {})[0]
+        self.assertEqual((rule.ok, rule.title), (True, "upscaler (version unknown)"),
+                         "found (by origin) though it has no version to compare")
+
+    def test_a_clone_of_a_fork_matches_either_repository(self):
+        # pyproject names upstream, the git origin is the fork (the Artius case)
+        pack = dict(name="comfyui-artius-browser", version="1.19.0",
+                    repo="https://github.com/AlexYez/comfyui-artius-browser",
+                    git="https://github.com/chanon/comfyui-artius-browser")
+        with Install({"comfyui-artius-browser": pack}):
+            for url in ("https://github.com/AlexYez/comfyui-artius-browser",
+                        "https://github.com/chanon/comfyui-artius-browser"):
+                rule = compat.check("artius >= 1.0.0 " + url, {})[0]
+                self.assertEqual(rule.result()["state"], "ok", url)
+
+    def test_found_by_name_from_another_repository_says_so_without_refusing(self):
+        with Install({"comfyui-thing": dict(name="comfyui-thing", version="2.0.0",
+                                            repo="https://github.com/forker/comfyui-thing")}):
+            rule = compat.check("comfyui-thing >= 1.0.0 https://github.com/original/comfyui-thing", {})[0]
+            self.assertTrue(rule.ok)
+            self.assertEqual(rule.result()["state"], "unknown", "passes, but marked")
+            self.assertIn("github.com/forker/comfyui-thing, not github.com/original/comfyui-thing", rule.detail)
+            # too old AND elsewhere: fails, and says both
+            rule = compat.check("comfyui-thing >= 3.0 https://github.com/original/comfyui-thing", {})[0]
+            self.assertFalse(rule.ok)
+            self.assertIn("a fork, or a renamed repository", rule.detail)
+
+    def test_found_by_folder_in_any_case_and_by_pyproject_name(self):
+        with Install({"ComfyUI-Pack": dict(name="registry-name", version="1.0.0")}):
+            self.assertTrue(compat.check("comfyui-pack >= 1.0", {})[0].ok, "folder, any case")
+            self.assertTrue(compat.check("REGISTRY-NAME >= 1.0", {})[0].ok, "pyproject name")
+
+    def test_the_older_node_form_still_finds_the_pack(self):
+        with Install({"the-pack": dict(name="x", version="0.9.0")}) as inst:
+            mod = module_at("obvpm_test_nodeform", os.path.join(inst.root, "the-pack", "nodes.py"))
+            reg = {"TheNode": type("TheNode", (), {"__module__": mod.__name__})}
+            rule = compat.check("the-product >= 1.0 node: TheNode", reg)[0]
+        self.assertEqual((rule.ok, rule.title), (False, "the-product needs updating"))
+
+    def test_not_pack_by_repository_or_name(self):
+        with Install({"enc": dict(name="comfyui-workflow-encrypt",
+                                  repo="https://github.com/jtydhr88/ComfyUI-Workflow-Encrypt")}):
+            for line in ("not pack https://github.com/jtydhr88/ComfyUI-Workflow-Encrypt",
+                         "not pack comfyui-workflow-encrypt", "not pack ENC"):
+                rule = compat.check(line, {})[0]
+                self.assertFalse(rule.ok, line)
+                self.assertEqual(rule.title, "enc must not be installed", line)
+            self.assertTrue(compat.check("not pack https://github.com/someone/else", {})[0].ok)
+
+    def test_a_packs_own_repository_wins_over_a_link_it_lists(self):
+        # Contex-Loop lists H3-Motion-Context's repository as its Homepage;
+        # a rule naming that repository means Motion-Context itself
+        packs = {"ComfyUI-MiniMaxH3-Contex-Loop": dict(raw=(
+                     '[project]\nname = "comfyui-minimaxh3-contex-loop"\nversion = "0.5.51"\n'
+                     '[project.urls]\nRepository = "https://github.com/ethanfel/ComfyUI-MiniMaxH3-Contex-Loop"\n'
+                     'Homepage = "https://github.com/nikodemon80/ComfyUI-H3-Motion-Context"\n')),
+                 "ComfyUI-H3-Motion-Context": dict(name="comfyui-h3-motion-context", version="0.2.0",
+                                                   git="https://github.com/nikodemon80/ComfyUI-H3-Motion-Context")}
+        with Install(packs):
+            info, how = compat.find_installed("mc", "https://github.com/nikodemon80/ComfyUI-H3-Motion-Context")
+            self.assertEqual((info["folder"], how), ("ComfyUI-H3-Motion-Context", "repository"))
+            # and a link-only match still counts when nothing owns the repository
+            del packs["ComfyUI-H3-Motion-Context"]
+        with Install(packs):
+            info, _ = compat.find_installed("mc", "https://github.com/nikodemon80/ComfyUI-H3-Motion-Context")
+            self.assertEqual(info["folder"], "ComfyUI-MiniMaxH3-Contex-Loop")
+
+    def test_query_and_fragment_do_not_change_the_repository(self):
+        self.assertEqual(compat.normalize_repo("https://github.com/Luis/ComfyUI-MiniMaxH3Mod#readme"),
+                         "github.com/luis/comfyui-minimaxh3mod")
+        self.assertEqual(compat.normalize_repo("https://github.com/o/r?tab=readme-ov-file"), "github.com/o/r")
+
+    def test_a_pyproject_is_read_as_toml_not_by_pattern(self):
+        with Install({"p": dict(raw='[project]\nname = "p"\nversion = "1.2.3"\n'
+                                    '[tool.other]\nversion = "9.9.9"\n'
+                                    '[project.urls]\nHomepage = "https://github.com/o/p"\n')}):
+            info = compat.installed_packs()[0]
+        self.assertEqual((info["version"], info["repos"]), ("1.2.3", {"github.com/o/p"}))
+
+
+class Install:
+    """A custom_nodes folder with fake packs, listed as ComfyUI lists them
+    (nodes.LOADED_MODULE_DIRS). Each pack: name / version / repo go into
+    pyproject.toml (raw= for the whole file), git= into .git/config."""
+
+    def __init__(self, packs):
+        self.packs = packs
+
+    def __enter__(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self.tmp.name, "custom_nodes")
+        dirs = {}
+        for folder, spec in self.packs.items():
+            path = os.path.join(self.root, folder)
+            os.makedirs(path)
+            text = spec.get("raw")
+            if text is None and any(k in spec for k in ("name", "version", "repo")):
+                text = "[project]\n"
+                if "name" in spec:
+                    text += 'name = "%s"\n' % spec["name"]
+                if "version" in spec:
+                    text += 'version = "%s"\n' % spec["version"]
+                if "repo" in spec:
+                    text += '\n[project.urls]\nRepository = "%s"\n' % spec["repo"]
+            if text is not None:
+                with open(os.path.join(path, "pyproject.toml"), "w", encoding="utf-8") as fh:
+                    fh.write(text)
+            if "git" in spec:
+                os.makedirs(os.path.join(path, ".git"))
+                with open(os.path.join(path, ".git", "config"), "w", encoding="utf-8") as fh:
+                    fh.write('[core]\n\tbare = false\n[remote "origin"]\n\turl = %s\n'
+                             '\tfetch = +refs/heads/*:refs/remotes/origin/*\n' % spec["git"])
+            dirs[folder] = path
+        self.saved = getattr(sys.modules["nodes"], "LOADED_MODULE_DIRS", None)
+        sys.modules["nodes"].LOADED_MODULE_DIRS = dirs
+        return self
+
+    def __exit__(self, *exc):
+        if self.saved is None:
+            del sys.modules["nodes"].LOADED_MODULE_DIRS
+        else:
+            sys.modules["nodes"].LOADED_MODULE_DIRS = self.saved
+        self.tmp.cleanup()
 
 
 if __name__ == "__main__":

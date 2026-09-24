@@ -15,22 +15,25 @@ what to do and where to go, so the person reading it can act on it
 without knowing the pack.
 
     comfyui >= 0.35.0
-    comfyui-obvpm >= 0.2.3   node: ValuePresets (obvpm)   https://github.com/chanon/comfyui-obvpm
+    frontend >= 1.53.0
+    comfyui-obvpm >= 0.2.3   https://github.com/chanon/comfyui-obvpm
     node MinimaxH3LatentUpscaler3D has enable_temporal_chunking   https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler   # the original, not the Plus fork
     node ModelPreviewOverrideKJ   https://github.com/kijai/ComfyUI-KJNodes   # ComfyUI-KJNodes
 
     not node SomeForkNode   https://...   # its pack replaces a node this workflow needs
     not pack ComfyUI-Workflow-Encrypt   # rewrites saved workflows
 
-Four rule kinds: the core version, a pack's version (found by a node
-it registers, read from that pack's pyproject.toml), a node that must
-be present, or must declare an input (which is how a same-name fork is
-told apart), and -- with `not` in front -- a node or a pack that must
-be ABSENT, for the packs known to break the workflow when they are
-installed alongside it. A pack is named by its folder under
-custom_nodes (case does not matter), since some register no node at
-all. A URL on the line becomes the link; text after ` #` is shown with
-the failure. The rules are hand-parsed, one line at a time, and
+Five rule kinds: the core version, the frontend's version (the page's
+own when a page asks, the one the server serves at run time), a pack's
+version (read from its pyproject.toml), a node that must be present,
+or must declare an input (which is how a same-name fork is told apart),
+and -- with `not` in front -- a node or a pack that must be ABSENT, for
+the packs known to break the workflow when they are installed alongside
+it. A pack is found by the repository URL on its line (matched against
+the pack's pyproject [project.urls] and its git origin), else by name
+(the pyproject name or the folder under custom_nodes, any case). A
+github.com URL on the line is also the link shown; text after ` #` is
+shown with the failure. The rules are hand-parsed, one line at a time, and
 nothing here imports or evaluates anything a workflow names: the
 registry is a dict lookup, a version is a file read.
 
@@ -56,12 +59,26 @@ MANAGER_HELP = ("In ComfyUI Manager: Custom Nodes Manager, find the pack, "
 
 DEFAULT_RULES = """# one requirement per line; text after # is shown when it fails
 # comfyui >= 0.35.0
-# some-pack >= 1.2.0   node: SomeNode   https://github.com/someone/some-pack
+# frontend >= 1.53.0
+# some-pack >= 1.2.0   https://github.com/someone/some-pack
 # node SomeNode   https://github.com/someone/some-pack
 # node SomeNode has some_input   https://...   # the original pack, not a fork
 # not node SomeForkNode   # a node whose pack breaks this workflow
 # not pack Some-Pack-Folder   # a pack (by its folder name) that breaks this workflow
 """
+
+# `frontend >= 1.53.0`: the ComfyUI frontend (its pip package's name too)
+FRONTEND_NAMES = ("frontend", "comfyui-frontend", "comfyui-frontend-package")
+
+# ComfyUI and its frontend have one home each, which does not move: their
+# rows always link there, whatever URL a line carries (the table does not
+# offer one to edit). Every other rule links to what its line says.
+# Display only: never written into the rules text. The route hands this
+# to the page too, so a row added while editing shows it at once.
+FIXED_LINKS = {
+    "core": "https://github.com/comfy-org/comfyui",
+    "frontend": "https://github.com/comfy-org/ComfyUI_frontend",
+}
 
 _URL = re.compile(r"https?://\S+")
 _VERSION = re.compile(r"^v?(\d+)\.(\d+)(?:\.(\d+))?")
@@ -92,9 +109,14 @@ class Rule:
         self.fix = ""
         self.installed = ""         # what was found, short: "0.2.5", "not installed"
 
+    def link(self):
+        """The link to show: FIXED_LINKS for ComfyUI and the frontend,
+        else the line's own URL."""
+        return FIXED_LINKS.get(self.kind) or self.url
+
     def required(self):
         """What the rule asks for, short: the table's 'Required' column."""
-        if self.kind in ("core", "pack") and self.version is not None:
+        if self.kind in ("core", "frontend", "pack") and self.version is not None:
             return ">= " + version_text(self.version)
         if self.kind == "node":
             return "with input " + self.input_name if self.input_name else "installed"
@@ -108,6 +130,8 @@ class Rule:
                 "state": state, "line": self.line,
                 "title": self.title, "detail": self.detail, "fix": self.fix,
                 "note": self.note, "url": self.url,
+                # what to show: the fixed link (ComfyUI, frontend), else the URL
+                "link": self.link(),
                 # the line's parts, for the table that edits them
                 "name": self.name,
                 "version": version_text(self.version) if self.version else "",
@@ -120,8 +144,8 @@ class Rule:
             lines.append("  " + self.note)
         if self.fix:
             lines.append("  Fix: " + self.fix)
-        if self.url:
-            lines.append("  See: " + self.url)
+        if self.link():
+            lines.append("  See: " + self.link())
         return "\n".join(lines)
 
 
@@ -144,9 +168,9 @@ def _error(text, why):
     rule.ok = False
     rule.title = "This rule cannot be read"
     rule.detail = "%r %s" % (text, why)
-    rule.fix = ("Write it as  comfyui >= 0.35.0,  pack >= 1.0 node: NodeId,  "
+    rule.fix = ("Write it as  comfyui >= 0.35.0,  frontend >= 1.53.0,  some-pack >= 1.0 https://github.com/owner/repo,  "
                 "node NodeId,  node NodeId has input_name,  not node NodeId,  "
-                "or  not pack FolderName  (a URL and a '# note' may follow).")
+                "or  not pack Name  (a URL and a '# note' may follow).")
     return rule
 
 
@@ -188,12 +212,15 @@ def parse_rule(line):
         return _error(text, "names nothing to check")
     words = body.split()
     if words[0].lower() == "not":
-        # `not node NodeId` / `not pack FolderName`: must be absent
+        # `not node NodeId` / `not pack Name [repository URL]`: must be absent
         what = words[1].lower() if len(words) > 1 else ""
         rest = body[len(words[0]):].strip()
         rest = rest[len(words[1]):].strip() if len(words) > 1 else ""
+        if what == "pack" and not rest and normalize_repo(url):
+            # `not pack https://github.com/owner/repo`: named by its URL
+            rest = normalize_repo(url).rsplit("/", 1)[-1]
         if what not in ("node", "pack") or not rest:
-            return _error(text, "must be  not node NodeId  or  not pack FolderName")
+            return _error(text, "must be  not node NodeId  or  not pack Name")
         return Rule(text, "no_" + what, rest, url=url, note=note)
     if words[0].lower() == "node":
         rest = body[len(words[0]):].strip()
@@ -206,7 +233,8 @@ def parse_rule(line):
         if not rest:
             return _error(text, "names no node after 'node'")
         return Rule(text, "node", rest.strip(), url=url, note=note)
-    # `name >= version [node: NodeId]`
+    # `name >= version [repository URL]` (an older `node: NodeId` tail is
+    # still read: it finds the pack by a node it registers, as a fallback)
     shape = re.match(r"^(?P<name>\S+)\s*>=\s*(?P<ver>\S+)(?:\s+node\s*:\s*(?P<node>.+))?$", body)
     if not shape:
         return _error(text, "is not a rule this node knows")
@@ -217,10 +245,9 @@ def parse_rule(line):
     node = (shape.group("node") or "").strip()
     if name.lower() == "comfyui":
         return Rule(text, "core", "ComfyUI", version=version, url=url, note=note)
-    if not node:
-        return _error(text, "needs  node: <a node id the pack registers>  so the "
-                      "installed pack can be found whatever its folder is called")
-    return Rule(text, "pack", name, version=version, node=node, url=url, note=note)
+    if name.lower() in FRONTEND_NAMES:
+        return Rule(text, "frontend", "Frontend", version=version, url=url, note=note)
+    return Rule(text, "pack", name, version=version, node=node or None, url=url, note=note)
 
 
 # ---------------------------------------------------------------- the install
@@ -235,30 +262,154 @@ def _registry():
     return NODE_CLASS_MAPPINGS
 
 
-def pack_version(node_class):
-    """The version in the pyproject.toml of the pack a node class came
-    from, or None when there is none to read. Walks up from the class's
-    file, but not past the folder under custom_nodes: above that is
-    ComfyUI itself, whose own pyproject must not answer for a pack."""
+def normalize_repo(url):
+    """A repository URL as one comparable key, 'github.com/owner/repo'
+    (lower case; https, http, git@host:owner/repo, .git, a trailing /,
+    www. and anything past owner/repo all read the same), or '' when it
+    is not a repository address."""
+    text = str(url or "").strip()
+    scp = re.match(r"^[\w.-]+@([^:/\s]+):(.+)$", text)          # git@github.com:owner/repo
+    if scp:
+        text = "https://%s/%s" % scp.groups()
+    found = re.match(r"^(?:https?|git|ssh)://(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?/(\S*)$", text, re.I)
+    if not found:
+        return ""
+    host = found.group(1).lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = re.split(r"[?#]", found.group(2), maxsplit=1)[0]        # '#readme', '?tab=…'
+    parts = [p for p in path.split("/") if p]
+    if len(parts) < 2:
+        return ""
+    repo = re.sub(r"\.git$", "", parts[1], flags=re.I)
+    return "%s/%s/%s" % (host, parts[0].lower(), repo.lower())
+
+
+# pyproject [project.urls] keys that say where the pack itself lives
+OWN_URL_KEYS = ("repository", "source", "source code", "code", "github")
+
+
+def _read_text(path, limit=256 * 1024):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read(limit)
+    except OSError:
+        return ""
+
+
+def _pyproject(folder):
+    """The [project] table of a pack's pyproject.toml ({} if none)."""
+    text = _read_text(os.path.join(folder, "pyproject.toml"))
+    if not text:
+        return {}
+    try:
+        import tomllib
+        project = tomllib.loads(text).get("project")
+        return project if isinstance(project, dict) else {}
+    except Exception:
+        # no tomllib (Python < 3.11) or a file it will not read: the
+        # three fields this needs, by line
+        out = {}
+        for key in ("name", "version"):
+            found = re.search(r'^\s*%s\s*=\s*"([^"]*)"' % key, text, re.M)
+            if found:
+                out[key] = found.group(1)
+        repo = re.search(r'^\s*Repository\s*=\s*"([^"]*)"', text, re.M)
+        if repo:
+            out["urls"] = {"Repository": repo.group(1)}
+        return out
+
+
+def git_origin(folder):
+    """The `origin` remote's URL of a git clone, read from .git/config
+    (no git process), or ''."""
+    text = _read_text(os.path.join(folder, ".git", "config"), 64 * 1024)
+    section = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            section = line.replace(" ", "").lower()
+            continue
+        if section == '[remote"origin"]':
+            found = re.match(r"url\s*=\s*(\S+)", line)
+            if found:
+                return found.group(1)
+    return ""
+
+
+def pack_info(folder_name, path):
+    """What identifies an installed pack: its folder, the name and version
+    in its pyproject.toml, and every repository it says it comes from
+    (pyproject [project.urls] and the git origin -- a clone of a fork has
+    both, the fork's and the original's)."""
+    project = _pyproject(path)
+    # OWN = where the pack says it lives (its Repository / Source url) and
+    # where it was cloned from; OTHER = any other link it lists. A pack
+    # may link someone else's repository it builds on (Contex-Loop lists
+    # H3-Motion-Context's), which must not make it that pack.
+    own, other = set(), set()
+    urls = project.get("urls")
+    if isinstance(urls, dict):
+        for key, value in urls.items():
+            if isinstance(value, str):
+                target = own if str(key).strip().lower() in OWN_URL_KEYS else other
+                target.add(normalize_repo(value))
+    own.add(normalize_repo(git_origin(path)))
+    own.discard("")
+    other.discard("")
+    return {"folder": str(folder_name), "path": str(path),
+            "name": str(project.get("name") or ""), "version": str(project.get("version") or ""),
+            "own": own, "repos": own | other}
+
+
+def installed_packs():
+    """pack_info of every custom node pack ComfyUI loaded."""
+    return [pack_info(folder, path) for folder, path in _loaded_packs().items()]
+
+
+def find_installed(name="", url="", packs=None):
+    """(pack_info, how) of the loaded pack a rule means, or (None, '').
+
+    By REPOSITORY first -- the one identity that does not depend on how
+    the pack was installed or what its folder is called -- then by NAME:
+    the name in its pyproject.toml or its folder name, in any case (a
+    registry install lowercases the folder, a git clone keeps the repo's
+    case). `how` is 'repository' or 'name'."""
+    packs = installed_packs() if packs is None else packs
+    wanted = str(name or "").strip().lower()
+
+    def named(info):
+        return wanted in (info["name"].lower(), info["folder"].lower(),
+                          os.path.basename(info["path"]).lower())
+
+    key = normalize_repo(url)
+    if key:
+        # a pack's own repository before a link it merely lists; among
+        # several, the one that also has the rule's name
+        for field in ("own", "repos"):
+            hits = [info for info in packs if key in info.get(field, info["repos"])]
+            if hits:
+                return next((i for i in hits if wanted and named(i)), hits[0]), "repository"
+    if wanted:
+        for info in packs:
+            if named(info):
+                return info, "name"
+    return None, ""
+
+
+def pack_of(node_class, packs=None):
+    """pack_info of the loaded pack a node class's code lives in, or None
+    (core nodes, or a pack ComfyUI did not list)."""
     module = sys.modules.get(getattr(node_class, "__module__", ""))
-    path = getattr(module, "__file__", None)
-    if not path:
+    file = getattr(module, "__file__", None)
+    if not file:
         return None
-    folder = os.path.dirname(os.path.abspath(path))
-    for _ in range(4):
-        candidate = os.path.join(folder, "pyproject.toml")
-        if os.path.isfile(candidate):
-            try:
-                with open(candidate, encoding="utf-8") as fh:
-                    text = fh.read(64 * 1024)
-            except OSError:
-                return None
-            found = re.search(r'^\s*version\s*=\s*"([^"]*)"', text, re.M)
-            return parse_version(found.group(1)) if found else None
-        parent = os.path.dirname(folder)
-        if parent == folder or os.path.basename(parent) == "custom_nodes":
-            break
-        folder = parent
+    path = os.path.normcase(os.path.abspath(file))
+    packs = installed_packs() if packs is None else packs
+    for info in packs:
+        root = os.path.normcase(os.path.abspath(info["path"]))
+        if path == root or path.startswith(root + os.sep):
+            return info
     return None
 
 
@@ -303,18 +454,6 @@ def _loaded_packs():
             if os.path.basename(os.path.dirname(str(path))).lower() == "custom_nodes"}
 
 
-def find_pack(name, packs=None):
-    """(folder name, path) of the loaded pack called `name`, matched on
-    the folder basename regardless of case (a registry install lowercases
-    it, a git clone keeps the repo's case), or None."""
-    packs = _loaded_packs() if packs is None else packs
-    wanted = str(name or "").strip().lower()
-    if not wanted:
-        return None
-    for folder, path in packs.items():
-        if str(folder).lower() == wanted or os.path.basename(str(path)).lower() == wanted:
-            return folder, path
-    return None
 
 
 def pack_version_at(folder):
@@ -378,14 +517,17 @@ def install_report():
 
 # ---------------------------------------------------------------- checking
 
-def check_rule(rule, registry=None):
-    """Fill in ok/title/detail/fix from the install. Never raises."""
+def check_rule(rule, registry=None, frontend=None):
+    """Fill in ok/title/detail/fix from the install. Never raises.
+    `frontend`: the version the asking page runs, when a page asks."""
     if rule.kind == "error":
         return rule
     registry = _registry() if registry is None else registry
     try:
         if rule.kind == "core":
             _check_core(rule)
+        elif rule.kind == "frontend":
+            _check_frontend(rule, frontend)
         elif rule.kind == "pack":
             _check_pack(rule, registry)
         elif rule.kind == "no_node":
@@ -402,6 +544,66 @@ def check_rule(rule, registry=None):
         rule.detail = rule.text
         rule.installed = "could not check"
     return rule
+
+
+def served_frontend_version():
+    """(version tuple or None, text) of the frontend this server serves.
+
+    What ComfyUI itself chooses at startup (FrontendManager.init_frontend):
+    the comfyui-frontend-package it has installed, unless it was started
+    with --front-end-version owner/repo@vX.Y.Z (that version) or
+    --front-end-root (a folder, whose version it cannot know: None). Used
+    at run time; a page that asks passes its own, exact version instead.
+    """
+    try:
+        from comfy.cli_args import args, DEFAULT_VERSION_STRING
+    except Exception:
+        args = None
+    if args is not None:
+        if getattr(args, "front_end_root", None):
+            return None, ""
+        chosen = str(getattr(args, "front_end_version", "") or "")
+        if chosen and chosen != DEFAULT_VERSION_STRING:
+            have = parse_version(chosen.rsplit("@", 1)[-1])      # @latest -> None
+            return (have, version_text(have)) if have else (None, "")
+    try:
+        from importlib.metadata import version as installed
+        text = installed("comfyui-frontend-package")
+    except Exception:
+        return None, ""
+    have = parse_version(text)
+    return (have, text) if have else (None, "")
+
+
+FRONTEND_FIX = ("Update ComfyUI together with its requirements (update_comfyui.bat "
+                "on the portable build; on a git install: git pull, then pip install "
+                "-r requirements.txt), which installs the frontend it pins. If ComfyUI "
+                "is started with --front-end-version, name a newer one there. Then "
+                "restart ComfyUI and reload the page.")
+
+
+def _check_frontend(rule, frontend=None):
+    have = parse_version(frontend) if frontend else None
+    text = version_text(have) if have else ""
+    if have is None:
+        have, text = served_frontend_version()
+    if have is None:
+        rule.ok = True
+        rule.unknown = True
+        rule.title = "Frontend version unknown"
+        rule.detail = "The frontend's version cannot be read; assumed new enough."
+        rule.installed = "unknown"
+        return
+    rule.installed = text
+    rule.ok = have >= rule.version
+    if rule.ok:
+        rule.title = "Frontend %s" % text
+        rule.detail = "needs %s or newer" % version_text(rule.version)
+    else:
+        rule.title = "The frontend is too old"
+        rule.detail = ("This is frontend %s; the workflow needs %s or newer."
+                       % (text, version_text(rule.version)))
+        rule.fix = FRONTEND_FIX
 
 
 def _check_core(rule):
@@ -427,34 +629,50 @@ def _check_core(rule):
 
 
 def _check_pack(rule, registry):
-    node_class = registry.get(rule.node)
-    if node_class is None:
+    packs = installed_packs()
+    info, how = find_installed(rule.name, rule.url, packs)
+    if info is None and rule.node:
+        # the older form: found by a node it registers
+        node_class = registry.get(rule.node)
+        info = pack_of(node_class, packs) if node_class is not None else None
+        how = "node" if info else ""
+    if info is None:
         rule.ok = False
         rule.title = "%s is not installed" % rule.name
-        rule.detail = ("The workflow needs it (its node %s is not registered)."
-                       % rule.node)
+        rule.detail = "The workflow needs it, and no installed pack is %s%s." % (
+            rule.name, " or comes from " + normalize_repo(rule.url) if normalize_repo(rule.url) else "")
         rule.fix = MANAGER_HELP + (" ComfyUI Manager's 'Install Missing Custom "
                                    "Nodes' finds it as well.")
         rule.installed = "not installed"
         return
-    have = pack_version(node_class)
+    where = "custom_nodes/" + info["folder"]
+    # Found by name (or node) although the rule names a repository the pack
+    # does not come from: a fork, or a repository that was renamed. Worth
+    # saying; not worth refusing a run over (a rename would refuse a
+    # working install) -- 'node X has input' is the fork detector.
+    key = normalize_repo(rule.url)
+    elsewhere = bool(key and info["repos"] and key not in info["repos"])
+    origin = (" It comes from %s, not %s: a fork, or a renamed repository."
+              % (", ".join(sorted(info["own"] or info["repos"])), key)) if elsewhere else ""
+    have = parse_version(info["version"])
     if have is None:
         rule.ok = True
         rule.unknown = True
         rule.title = "%s (version unknown)" % rule.name
-        rule.detail = ("installed, but its version cannot be read; needs %s "
-                       "or newer" % version_text(rule.version))
+        rule.detail = ("installed (%s), but its version cannot be read; needs %s "
+                       "or newer.%s" % (where, version_text(rule.version), origin))
         rule.installed = "version unknown"
         return
     rule.installed = version_text(have)
     rule.ok = have >= rule.version
     if rule.ok:
+        rule.unknown = elsewhere
         rule.title = "%s %s" % (rule.name, version_text(have))
-        rule.detail = "needs %s or newer" % version_text(rule.version)
+        rule.detail = "needs %s or newer (%s).%s" % (version_text(rule.version), where, origin)
     else:
         rule.title = "%s needs updating" % rule.name
-        rule.detail = ("%s %s is installed; the workflow needs %s or newer."
-                       % (rule.name, version_text(have), version_text(rule.version)))
+        rule.detail = ("%s %s is installed (%s); the workflow needs %s or newer.%s"
+                       % (rule.name, version_text(have), where, version_text(rule.version), origin))
         rule.fix = MANAGER_HELP + " Or, in its folder under custom_nodes: git pull."
 
 
@@ -516,29 +734,23 @@ def _check_no_node(rule, registry):
         return
     rule.ok = False
     rule.title = "Node %s must not be installed" % rule.name
-    module = sys.modules.get(getattr(node_class, "__module__", ""))
-    path = os.path.normcase(os.path.abspath(getattr(module, "__file__", "") or ""))
-    where = ""
-    rule.installed = "installed"
-    for folder, root in _loaded_packs().items():
-        if path.startswith(os.path.normcase(os.path.abspath(str(root))) + os.sep):
-            where = " (from the pack in custom_nodes/%s)" % folder
-            rule.installed = "installed, in custom_nodes/%s" % folder
-            break
+    info = pack_of(node_class)
+    where = " (from the pack in custom_nodes/%s)" % info["folder"] if info else ""
+    rule.installed = "installed, in custom_nodes/%s" % info["folder"] if info else "installed"
     rule.detail = ("A pack registering this node is installed%s, and it breaks "
                    "this workflow." % where)
     rule.fix = UNINSTALL_HELP
 
 
 def _check_no_pack(rule):
-    found = find_pack(rule.name)
-    if found is None:
+    info, _ = find_installed(rule.name, rule.url)
+    if info is None:
         rule.ok = True
         rule.title = "No pack %s" % rule.name
         rule.detail = "not installed, as required"
         rule.installed = "not installed"
         return
-    folder, _ = found
+    folder = info["folder"]
     rule.ok = False
     rule.installed = "installed, as custom_nodes/%s" % folder
     rule.title = "%s must not be installed" % folder
@@ -547,9 +759,10 @@ def _check_no_pack(rule):
     rule.fix = UNINSTALL_HELP
 
 
-def check(text, registry=None):
-    """Every rule, checked, in order."""
-    return [check_rule(rule, registry) for rule in parse_rules(text)]
+def check(text, registry=None, frontend=None):
+    """Every rule, checked, in order. `frontend`: the asking page's
+    frontend version, for `frontend >=` rules (else the served one)."""
+    return [check_rule(rule, registry, frontend) for rule in parse_rules(text)]
 
 
 def failures(rules):
@@ -575,15 +788,16 @@ class CompatibilityCheck:
     RETURN_TYPES = ()
     DESCRIPTION = (
         "What this workflow needs from the install, checked. Write one "
-        "requirement per line -- 'comfyui >= 0.35.0', 'some-pack >= 1.2 "
-        "node: ItsNodeId', 'node NodeId', 'node NodeId has input_name' "
+        "requirement per line -- 'comfyui >= 0.35.0', 'frontend >= 1.53.0', 'some-pack >= 1.2 "
+        "https://github.com/owner/repo' (found by that repository, else by "
+        "name), 'node NodeId', 'node NodeId has input_name' "
         "(catches a fork registering the same node name), 'not node NodeId' "
-        "or 'not pack FolderName' (a pack that breaks the workflow when "
-        "installed) -- with a URL and a '# note' after it. The node says on "
-        "its face whether the install can run the workflow; View Details "
+        "or 'not pack Name' (a pack that breaks the workflow when "
+        "installed) -- with a '# note' after it. The node says on "
+        "its face whether the install can run the workflow; 'view details' "
         "shows every rule as tables and is where they are edited. A run "
         "stops here, before anything else runs, with what to fix while "
-        "anything fails. 'Copy Report' copies the install (versions, every "
+        "anything fails. 'copy report' copies the install (versions, every "
         "pack, node mode) for a bug report."
     )
 
@@ -594,11 +808,12 @@ class CompatibilityCheck:
                 "rules": ("STRING", {
                     "default": DEFAULT_RULES, "multiline": True,
                     "tooltip": "One requirement per line: comfyui >= X, "
-                               "pack >= X node: NodeId, node NodeId, node "
-                               "NodeId has input_name, not node NodeId, or "
-                               "not pack FolderName. A URL on the line is "
-                               "shown as a link; text after ' #' with the "
-                               "result. Lines starting with # are ignored.",
+                               "frontend >= X, some-pack >= X [repository URL], "
+                               "node NodeId, node NodeId has input_name, not "
+                               "node NodeId, or not pack Name [repository URL]. "
+                               "A github.com URL on the line is shown as a "
+                               "link; text after ' #' with the result. Lines "
+                               "starting with # are ignored.",
                 }),
             },
         }
@@ -621,13 +836,17 @@ def register():
         try:
             data = await request.json()
             rules = str(data.get("rules", ""))
+            # the page's own frontend version: exact, where the server can
+            # only say what it was set to serve
+            frontend = str(data.get("frontend", "") or "")[:64]
             # off the event loop: a node describing its inputs may scan a
             # models folder
-            results = await asyncio.to_thread(check, rules)
+            results = await asyncio.to_thread(check, rules, None, frontend or None)
             # the text's lines too: a result's `line` indexes them, which
             # is how the table editor keeps comments and order in place
             return web.json_response({"results": [r.result() for r in results],
-                                      "lines": rules.splitlines()})
+                                      "lines": rules.splitlines(),
+                                      "links": FIXED_LINKS})
         except ValueError as why:
             return web.json_response({"error": str(why)}, status=200)
         except Exception as exc:

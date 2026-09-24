@@ -27,7 +27,7 @@ async function dynamic() {
         if (name.endsWith("scripts/app.js")) mod = mock({ app: { registerExtension: noop, canvas: {} } });
         else if (name.endsWith("scripts/api.js")) mod = mock({ api: { fetchApi: async () => { throw new Error("offline"); } } });
         else if (name === "obvpm_ui.js") mod = mock({ themePalette: () => ({}), el: noop,
-            ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets", "addPanelWidget", "valueTooltip", "askText", "askConfirm", "notice"].map(k => [k, noop])),
+            ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets", "addPanelWidget", "valueTooltip", "askText", "askConfirm", "notice", "NODE_BUTTON", "NODE_BUTTON_HOVER", "nodeButton", "nodeButtonBar", "paintNodeButton"].map(k => [k, noop])),
             legacyCanvasBox: (ctx, w, h) => [w, h] });
         else if (name === "obvpm_bundle_config.js") mod = mock(Object.fromEntries(["addConfigButton", "applyUnbundleLayout", "hasUnbundleLayout", "openBundleConfig", "openUnbundleConfig"].map(k => [k, noop])));
         else if (name === "obvpm_fold.js") mod = mock({ foldButton: noop, installFold: noop, isFolded: n => !!n.flags?.collapsed, syncFold: noop });

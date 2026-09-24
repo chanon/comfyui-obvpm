@@ -44,7 +44,7 @@ function fakeDocument() {
 async function load({ fetchApi, confirm } = {}) {
     const document = fakeDocument();
     const overlays = [];
-    const context = vm.createContext({ console, document, setTimeout, clearTimeout,
+    const context = vm.createContext({ console, document, setTimeout, clearTimeout, URL,
         requestAnimationFrame: (fn) => fn(),
         window: { __COMFYUI_FRONTEND_VERSION__: "1.53.6" },
         navigator: { userAgent: "TestBrowser/1" },
@@ -81,10 +81,15 @@ async function load({ fetchApi, confirm } = {}) {
                 return o;
             },
             askConfirm: async (message, opts) => { confirms.push({ message, ...opts }); return confirm ? confirm() : true; },
-            themePalette: () => ({ text: "#eee", edge: "#444", rest: "#333" }), dropWidgetSockets() {}, addPanelWidget() {} });
+            themePalette: () => ({ text: "#eee", edge: "#444", rest: "#333" }), dropWidgetSockets() {}, addPanelWidget() {},
+            nodeButton: (label, run) => { const b = document.createElement("button"); b.textContent = label;
+                                          b.nodeButton = true; b.addEventListener("click", () => run?.()); return b; },
+            nodeButtonBar: (bs) => { const bar = document.createElement("div"); bar.nodeButtonBar = true;
+                                     for (const b of bs) bar.appendChild(b); return bar; },
+            paintNodeButton() {} });
         else {
             const source = (await readFile(new URL(name, root), "utf8"))
-                + "\nexport { paint, faceButtons, reportText, lineOf, entriesOf, serialize, openDetails };";
+                + "\nexport { paint, faceButtons, reportText, lineOf, entriesOf, serialize, openDetails, linkOf, authored };";
             mod = new vm.SourceTextModule(source, { context, identifier: name });
         }
         cache.set(name, mod);
@@ -139,40 +144,73 @@ const ANSWER = { lines: TEXT.split("\n"), results: [
       installed: "version unknown" },
 ] };
 
-test("the face is a summary: verdict, what fails, a tally; two buttons outside it", async () => {
+test("the face: 'Compatibility Issues', a block per issue with versions and link; two buttons outside it", async () => {
     const { paint, faceButtons, document } = await load();
     const panel = document.createElement("div");
     assert.equal(paint(panel, ANSWER), 2);
     const text = panel.textContent;
-    assert.match(text, /2 things to fix/);
-    assert.ok(text.indexOf("✗ The wrong X is installed") < text.indexOf("✗ Node Z is not installed"));
-    assert.match(text, /✓ 1 check passed · \? 1 could not be checked/);
-    // the details are in the dialog now, not on the face
+    const heading = panel.children[0];
+    assert.equal(heading.textContent, "2 Compatibility Issues");
+    assert.equal(heading.style.font, "700 13px sans-serif", "bold");
+    assert.equal(heading.style.color, "#ff8a8a", "red");
+    assert.ok(!text.includes("things to fix"), "the long sentence is gone from the face");
+    // whose links these are, right under the heading, before any link
+    assert.equal(panel.children[1].textContent,
+                 "Links come from whoever made this workflow. Check where a link goes before installing anything from it.");
+    // one block per failing rule, in order, each with what is needed and what is there
+    const blocks = panel.children.slice(2, 4);
+    assert.match(blocks[0].textContent, /^✗ The wrong X is installed/);
+    assert.match(blocks[0].textContent, /Required with input y/);
+    assert.match(blocks[0].textContent, /Installed installed, without y/);
+    assert.match(blocks[1].textContent, /^✗ Node Z is not installed/);
+    assert.match(blocks[1].textContent, /Installed not installed/);
+    assert.ok(blocks.every((b) => b.style.background), "each issue is a block");
+    // under issues the passes are "the others", without a tick
+    assert.match(text, /1 other check passed · \? 1 could not be checked/);
+    assert.ok(!text.includes("✓"), "no tick while something fails");
+    // the link to get it: an anchor for http(s) only
+    const anchors = panel.all().filter((n) => n.tag === "a");
+    assert.equal(anchors.length, 1, "the javascript: url is not a link");
+    assert.equal(anchors[0].href, "https://github.com/LBH-123-AI/x");
+    assert.equal(anchors[0].attrs.rel, "noopener noreferrer");
+    // (and only when a link shown is the author's)
+    const quiet = document.createElement("div");
+    paint(quiet, { links: { core: "https://github.com/comfy-org/comfyui" },
+                   results: [{ ...ANSWER.results[0], ok: false, state: "fail", url: "" },
+                             { ...ANSWER.results[2], url: "" }] });
+    assert.ok(!quiet.textContent.includes("Links come from"),
+              "no author links on the face: no warning");
+    // the fix and the detail stay in View Details
     assert.ok(!text.includes("Install the original."), "no fix on the face");
     assert.ok(!text.includes("<b>fork</b>"), "no detail on the face");
-    assert.equal(panel.all().filter((n) => n.tag === "a").length, 0, "no links on the face");
-    // the buttons are not in the painted (scrolling) part
+    // the buttons are not in the painted (scrolling) part, and no coloured edge
     assert.deepEqual(buttons(panel), []);
-    assert.equal(panel.style.borderColor, "rgba(220,80,80,0.6)");
-    // painting a list can colour the frame around it instead
-    const frame = document.createElement("div"), list = document.createElement("div");
-    paint(list, ANSWER, frame);
-    assert.equal(frame.style.borderColor, "rgba(220,80,80,0.6)");
-    assert.equal(list.style.borderColor, undefined);
+    assert.equal(panel.style.borderColor, undefined);
+    assert.equal(panel.style.border, undefined);
     let details = 0, reports = 0;
     const row = faceButtons({ details: () => { details += 1; }, report: () => { reports += 1; } });
-    assert.deepEqual(buttons(row).map((n) => n.textContent), ["View Details", "Copy Report"]);
+    assert.deepEqual(buttons(row).map((n) => n.textContent), ["view details", "copy report"], "lower case, like Value Presets' face buttons");
+    assert.ok(row.nodeButtonBar && buttons(row).every((b) => b.nodeButton),
+              "the pack's shared face buttons, not hand-styled ones");
     buttons(row)[0].fire("click");
     buttons(row)[1].fire("click");
     assert.deepEqual([details, reports], [1, 1]);
 
     assert.equal(paint(panel, { results: [ANSWER.results[0]] }), 0);
     assert.match(panel.textContent, /This install can run the workflow/);
-    assert.equal(panel.style.borderColor, "rgba(80,180,110,0.6)");
+    assert.equal(panel.children[0].style.color, "#7fd49a", "green text, no border");
     assert.equal(paint(panel, { results: [] }), 0);
     assert.match(panel.textContent, /No requirements listed/);
     assert.equal(paint(panel, { error: "the rules are larger than 16 KB." }), 1);
-    assert.match(panel.textContent, /✗ the rules are larger/);
+    assert.match(panel.textContent, /^Compatibility Issues✗ the rules are larger/);
+    // an unreadable line has no versions: its problem is shown instead
+    paint(panel, { results: [{ kind: "error", ok: false, title: "This rule cannot be read",
+                               detail: "'bogus' is not a rule this node knows", required: "", installed: "" }] });
+    assert.match(panel.children[1].textContent, /'bogus' is not a rule/);
+    assert.equal(panel.children[0].textContent, "1 Compatibility Issue", "singular");
+    // all passing: the tick and no "other"
+    paint(panel, { results: [ANSWER.results[0], { ...ANSWER.results[0], line: 9 }] });
+    assert.match(panel.textContent, /✓ 2 checks passed$/);
 });
 
 test("View Details: one table per kind, failures first, required / installed / link / fix", async () => {
@@ -185,11 +223,12 @@ test("View Details: one table per kind, failures first, required / installed / l
     const tables = panel.all().filter((n) => n.tag === "table");
     assert.equal(tables.length, 3, "ComfyUI, Node packs, Nodes -- empty kinds not shown");
     const heads = tables.map((t) => t.all().filter((n) => n.tag === "th").map((n) => n.textContent));
-    assert.deepEqual(heads[0], ["Result", "Required version", "Installed", "Link", "Note"]);
-    assert.deepEqual(heads[1], ["Result", "Pack", "Required version", "Installed", "Found by node", "Link", "Note"]);
+    assert.deepEqual(heads[0], ["Result", "Part", "Required version", "Installed", "Link", "Note"]);
+    assert.deepEqual(heads[1], ["Result", "Pack", "Required version", "Installed", "Repository", "Note"]);
     assert.deepEqual(heads[2], ["Result", "Node", "Must have input", "Installed", "Link", "Note"]);
-    assert.match(tables[0].textContent, /✓ OK>= 0\.35\.00\.37\.0/);
-    assert.match(tables[1].textContent, /\? Unknownq>= 1\.0\.0version unknownQ/);
+    assert.match(tables[0].textContent, /✓ OKComfyUI>= 0\.35\.00\.37\.0/);
+    assert.match(tables[1].textContent, /\? Unknownq>= 1\.0\.0version unknown/);
+    assert.ok(!tables[1].textContent.includes("unknownQ"), "no 'found by node' column");
     const nodes = tables[2].textContent;
     assert.ok(nodes.indexOf("✗ Fix") === nodes.indexOf("✗ FixX"), "failing row first");
     assert.match(nodes, /✗ FixXyinstalled, without y/);
@@ -210,7 +249,12 @@ test("rows become lines compat.py reads back (the strings test_compat.py parses)
                  "comfyui >= 0.35.0   https://x.y/c   # core note");
     assert.equal(lineOf(row({ kind: "pack", name: "comfyui-obvpm", version: "0.2.5", node: "ValuePresets (obvpm)",
                               url: "https://github.com/chanon/comfyui-obvpm" })),
-                 "comfyui-obvpm >= 0.2.5   node: ValuePresets (obvpm)   https://github.com/chanon/comfyui-obvpm");
+                 "comfyui-obvpm >= 0.2.5   node: ValuePresets (obvpm)   https://github.com/chanon/comfyui-obvpm",
+                 "an older rule's node: is kept");
+    assert.equal(lineOf(row({ kind: "pack", name: "comfyui-kjnodes", version: "1.1.0",
+                              url: "https://github.com/kijai/ComfyUI-KJNodes", note: "Set/Get" })),
+                 "comfyui-kjnodes >= 1.1.0   https://github.com/kijai/ComfyUI-KJNodes   # Set/Get",
+                 "a new one needs none");
     assert.equal(lineOf(row({ name: "MinimaxH3LatentUpscaler3D", input: "enable_temporal_chunking",
                               note: "the original, not #2" })),
                  "node MinimaxH3LatentUpscaler3D has enable_temporal_chunking   # the original, not #2");
@@ -261,15 +305,16 @@ test("the settings button: inputs, Apply checks first and marks the row a new li
     assert.equal(tables.length, 4, "every kind that can be added to, even empty ones");
     // the pack's version input: break it
     const packInputs = tables[1].all().filter((n) => n.tag === "input");
-    assert.deepEqual(packInputs.map((n) => n.value), ["q", "1.0.0", "Q", ""]);
+    assert.deepEqual(packInputs.map((n) => n.value), ["q", "1.0.0", ""], "name, version, repository");
     assert.match(tables[1].textContent, /\? Unknown/, "the last result, while untouched");
     packInputs[1].value = "one";
     packInputs[1].fire("input");
     assert.ok(!tables[1].textContent.includes("? Unknown"), "a changed row's old result is gone");
     assert.match(tables[1].textContent, /edited/);
-    // one ComfyUI rule is enough: no + Add under a table that has it
+    // the ComfyUI table takes one row per part: it has ComfyUI, so + Add
+    // is for the frontend (tested below); other tables always add
     const addsIn = (t) => buttons(t.parent.parent).filter((b) => b.textContent === "+ Add").length;
-    assert.equal(addsIn(tables[0]), 0);
+    assert.equal(addsIn(tables[0]), 1);
     assert.equal(addsIn(tables[1]), 1);
     reply = (text) => ({ lines: text.split("\n"), results: [
         { kind: "error", line: 5, ok: false, rule: "q >= one   node: Q", detail: "'q >= one   node: Q' has a version that is not written like 1.2.3" },
@@ -358,6 +403,64 @@ test("Edit as Text: Apply to Tables re-reads the rows from the server", async ()
     assert.deepEqual(tables[3].all().filter((n) => n.tag === "input").map((n) => n.value), ["Enc", ""]);
 });
 
+test("the frontend: its own row in the ComfyUI table, and the page sends its version", async () => {
+    const posts = [];
+    const { openDetails, overlays, lineOf, serialize } = await load({
+        fetchApi: (url, body) => { posts.push(body); return { lines: body.rules.split("\n"), results: [] }; },
+    });
+    const row = { kind: "frontend", name: "Frontend", version: "1.53.0", node: "", input: "", url: "", note: "why", raw: "" };
+    assert.equal(lineOf(row), "frontend >= 1.53.0   # why");
+    const rules = { value: TEXT, callback() {} };
+    const dlg = openDetails({}, { rules, answer: () => ANSWER, refresh: async () => {} });
+    const o = overlays[0];
+    await press(o.panel, GEAR);
+    const comfy = () => o.panel.all().filter((n) => n.tag === "table")[0];
+    const addHere = () => buttons(comfy().parent.parent).find((b) => b.textContent === "+ Add");
+    await addHere().onClick();
+    // the new row is the part the table did not have, and the table is now full
+    const selects = comfy().all().filter((n) => n.tag === "select");
+    assert.deepEqual(selects.map((s) => s.value), ["core", "frontend"]);
+    assert.equal(addHere(), undefined, "one row per part: nothing left to add");
+    const version = comfy().all().filter((n) => n.tag === "input")[1];     // the new row's version
+    version.value = "1.53.0";
+    version.fire("input");
+    const { text } = serialize(dlg.state.entries);
+    assert.equal(text.split("\n")[2], "frontend >= 1.53.0", "after the ComfyUI rule");
+    await press(o.panel, "Apply");
+    assert.equal(posts.at(-1).frontend, "1.53.6", "the page's own frontend version goes with the check");
+});
+
+test("ComfyUI and the frontend link to their fixed repos: shown, never an input, never written", async () => {
+    const { openDetails, overlays, paint, serialize, document } = await load();
+    const LINKS = { core: "https://github.com/comfy-org/comfyui",
+                    frontend: "https://github.com/comfy-org/ComfyUI_frontend" };
+    const withLink = { ...ANSWER, links: LINKS, results: ANSWER.results.map((r) => (r.kind === "core"
+        ? { ...r, ok: false, state: "fail", title: "ComfyUI is too old", link: LINKS.core }
+        : r)) };
+    // the face's block links to it
+    const panel = document.createElement("div");
+    paint(panel, withLink);
+    assert.ok(panel.all().some((n) => n.tag === "a" && n.href === "https://github.com/comfy-org/comfyui"));
+    // View Details links to it
+    const dlg = openDetails({}, { rules: { value: TEXT }, answer: () => withLink, refresh: async () => {} });
+    const o = overlays[0];
+    const comfy = () => o.panel.all().filter((n) => n.tag === "table")[0];
+    assert.ok(comfy().all().some((n) => n.tag === "a" && n.href === "https://github.com/comfy-org/comfyui"));
+    // editing: no Link input in this table, the fixed link still shown, text untouched
+    await press(o.panel, GEAR);
+    const inputs = comfy().all().filter((n) => n.tag === "input");
+    assert.deepEqual(inputs.map((n) => n.value), ["0.35.0"], "only the version is typed");
+    const anchors = () => comfy().all().filter((n) => n.tag === "a").map((n) => n.href);
+    assert.deepEqual(anchors(), [LINKS.core]);
+    assert.equal(serialize(dlg.state.entries).text, TEXT);
+    // switching the row's Part moves the link with it
+    const part = comfy().all().find((n) => n.tag === "select");
+    part.value = "frontend";
+    part.fire("change");
+    assert.deepEqual(anchors(), [LINKS.frontend]);
+    assert.equal(serialize(dlg.state.entries).text.split("\n")[1], "frontend >= 0.35.0");
+});
+
 test("a note is a button: View opens it in a pop, and editing edits it there", async () => {
     const { openDetails, overlays } = await load();
     const rules = { value: TEXT };
@@ -404,6 +507,43 @@ test("the dialog's heading: name and verdict on one line; no legend while editin
     assert.equal(heading.children[1].style.color, "#7fd49a", "green");
     await press(o.panel, GEAR);
     assert.ok(!o.panel.textContent.includes("Each row is one requirement"));
+});
+
+test("only github.com is a link; everything else is shown as plain text", async () => {
+    const { linkOf } = await load();
+    const shown = (u) => { const n = linkOf(u); return n.tag === "a" ? ["a", n.textContent, n.href] : ["text", n.textContent]; };
+    // github.com links, shown host + path; a long path is what gets cut
+    assert.deepEqual(shown("https://github.com/kijai/ComfyUI-KJNodes/"),
+                     ["a", "github.com/kijai/ComfyUI-KJNodes ↗", "https://github.com/kijai/ComfyUI-KJNodes/"]);
+    const [kind, text] = shown("https://www.github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler/tree/main");
+    assert.equal(kind, "a");
+    assert.ok(text.startsWith("github.com/LBH-123-AI/") && text.includes("…"), text);
+    // anything that only LOOKS like github.com is text
+    for (const url of [
+        "https://github.com-comfy-org-comfyui-manager-release.evil.example/installer.zip",   // long look-alike host
+        "https://github.com.evil.example/x",                  // github.com as a subdomain
+        "https://github.com@evil.example/x",                  // goes to evil.example
+        "https://user:pw@github.com/x",                       // credentials in a link
+        "https://g\u0456thub.com/comfy-org/comfyui",           // Cyrillic і (U+0456)
+        "https://raw.githubusercontent.com/o/r/main/x.py",    // another host, even GitHub's
+        "https://example.com/pack",
+        "javascript:alert(1)", "file:///C:/x", "not a url",
+    ]) {
+        assert.deepEqual(shown(url), ["text", url], url);
+    }
+});
+
+test("View Details says links and notes are the author's, when there are any", async () => {
+    const { openDetails, overlays, authored } = await load();
+    const LINKS = { core: "https://github.com/comfy-org/comfyui" };
+    const core = { ...ANSWER.results[0], url: "https://x.y/whatever" };
+    assert.equal(authored({ links: LINKS, results: [core] }), false, "a fixed-link row's URL is not the author's word");
+    assert.equal(authored({ links: LINKS, results: [ANSWER.results[1]] }), true);
+    assert.equal(authored({ links: LINKS, results: [{ ...ANSWER.results[2], url: "", note: "run this" }] }), true);
+    openDetails({}, { rules: { value: TEXT }, answer: () => ({ ...ANSWER, links: LINKS }), refresh: async () => {} });
+    assert.match(overlays[0].panel.textContent, /Links and notes come from whoever made this workflow/);
+    openDetails({}, { rules: { value: TEXT }, answer: () => ({ links: LINKS, lines: [], results: [core] }), refresh: async () => {} });
+    assert.ok(!overlays[1].panel.textContent.includes("Links and notes come from"));
 });
 
 test("the report is the install, the browser's facts and the results, as text", async () => {

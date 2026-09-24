@@ -84,7 +84,7 @@ function cssVar(name, fallback) {
  * its scrollHeight on every repaint either: the user's resize is theirs.
  */
 export function addPanelWidget(node, name, element,
-                               { minHeight = 120, minWidth = 0, scroller = null } = {}) {
+                               { minHeight = 120, minWidth = 0, scroller = null, margin = null } = {}) {
     Object.assign(element.style, {
         contain: "size",
         minHeight: minHeight + "px",
@@ -105,7 +105,11 @@ export function addPanelWidget(node, name, element,
         });
     }
     hookPanelWheel(element, scroller ?? element);
-    const w = node.addDOMWidget(name, "div", element, { hideOnZoom: false });
+    // `margin`: the space classic mode keeps around a DOM widget on every
+    // side (frontend default 10 px, domWidget.ts DEFAULT_MARGIN). Nodes 2.0
+    // lays the widget out in its own grid and does not read it.
+    const w = node.addDOMWidget(name, "div", element,
+                                { hideOnZoom: false, ...(margin != null ? { margin } : {}) });
     w.serialize = false;
     w.options.serialize = false;
     w.computeLayoutSize = () => ({ minHeight, maxHeight: 100000, minWidth });
@@ -243,6 +247,73 @@ function alpha(color, a) {
     const c = darken(color, 1, 0); // normalizes to rgb()/rgba()
     const m = c.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     return m ? `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a})` : c;
+}
+
+// ---------------------------------------------------------------------------
+// Buttons on a node's face
+// ---------------------------------------------------------------------------
+//
+// ONE look for every button on an obvpm node's face (the user, 2026-09-24:
+// "the styling of the buttons on the node faces should be the same style
+// as the value presets node"). Value Presets' row is the reference: 24 px
+// tall, 10 px type on an 18 px line, 4 px corners, the node chrome's
+// palette, grey on hover, 3 px apart in one row that never wraps -- a
+// squeezed label ends in an ellipsis instead. Dialog buttons are
+// pushButton's; these are for faces only. Never style a face button by
+// hand: use nodeButton / nodeButtonBar.
+
+/** The face button's shape; colours come from paintNodeButton. */
+export const NODE_BUTTON = {
+    borderRadius: "4px", padding: "2px 8px", cursor: "pointer",
+    whiteSpace: "nowrap", borderWidth: "1px", borderStyle: "solid",
+    // an explicit line-height: without it button heights drift with the
+    // glyphs in their labels
+    font: "10px/18px sans-serif",
+    height: "24px", boxSizing: "border-box",
+    // natural width, but allowed to shrink (with an ellipsis) when the
+    // node is dragged narrow
+    flex: "0 1 auto", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis",
+};
+export const NODE_BUTTON_HOVER = "rgba(127,127,127,0.3)";
+
+/** (Re)colour a face button from the current theme -- call again after a
+ *  theme change, since the palette is resolved values, not var()s. */
+export function paintNodeButton(b) {
+    const P = themePalette();
+    b.style.background = P.rest;
+    b.style.borderColor = P.edge;
+    b.style.color = P.text;
+}
+
+/** A face button: the shared look, hover, and a click that never reaches
+ *  the canvas. `run` may be reassigned later through `b.obvpmRun`. */
+export function nodeButton(label, run, { tip } = {}) {
+    const b = document.createElement("button");
+    Object.assign(b.style, NODE_BUTTON);
+    b.textContent = label;
+    if (tip) b.title = tip;
+    b.obvpmRun = run;
+    paintNodeButton(b);
+    b.addEventListener("mouseenter", () => { b.style.background = NODE_BUTTON_HOVER; });
+    b.addEventListener("mouseleave", () => { b.style.background = themePalette().rest; });
+    b.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        b.obvpmRun?.();
+    });
+    return b;
+}
+
+/** The row face buttons sit in: one line, 3 px apart, fixed 24 px tall. */
+export function nodeButtonBar(buttons = []) {
+    const bar = document.createElement("div");
+    Object.assign(bar.style, {
+        display: "flex", gap: "3px", alignItems: "center",
+        flexWrap: "nowrap", overflow: "hidden",
+        height: "24px", flexShrink: "0",
+    });
+    for (const b of buttons) bar.appendChild(b);
+    return bar;
 }
 
 /**
