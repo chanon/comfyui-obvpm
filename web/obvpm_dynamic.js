@@ -505,7 +505,14 @@ function wireName(node, slot, used, preferTitle) {
     const title = String(source?.node?.title ?? "").trim();
     let base = preferTitle ? title.replace(/\s+/g, " ") : "";
     if (!base) {
-        base = String(out?.label || out?.localized_name || out?.name || "").trim();
+        // `label` is the user's own rename and wins. Then the output's
+        // API `name`, NOT its `localized_name`: on a frontend set to
+        // another language that field holds the translation, so a
+        // Bundle re-deriving its fields on load packed "width" under
+        // "Breite" while the Unbundle still asked for "width" and got
+        // None (user report, 2026-09-24). The API name is the same in
+        // every language.
+        base = String(out?.label || out?.name || out?.localized_name || "").trim();
         if (!base || base === "*") base = title;
         // Field names are dict keys, so they are normalised to something
         // key-shaped. A branch name is a label the user reads and picks

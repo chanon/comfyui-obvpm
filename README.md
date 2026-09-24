@@ -8,6 +8,10 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 
 **Also check out my new Timeline node:**  https://github.com/obvpm/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Bundle: Fixed issue where if ComfyUI is set to a non-English language input pin names could use the translated output pin names of the upstream nodes causing breaks in the downstream Unbundle(s). Workflows need no changes, they will automatically work in the new version.
+
 ### 0.2.4 (2026-09-23)
 
 - Value Presets: The schema editor now has an  **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows.
@@ -26,8 +30,6 @@ NOTE: This repo has moved from https://github.com/obvpm/comfyui-obvpm
 - Value Presets: a field can carry a hint. Put `# any text` at the end of its schema line and it shows when hovering over the widget.
 - Value Presets: the schema editor has a `copy` button that copies the schema as text, and a `paste` button that replaces the fields with a pasted one (checked first; nothing changes on the node until Apply). The editor also has columns for the condition and the hint.
 - The package published to the Comfy Registry no longer contains the tests and CI helpers, only the pack itself (`.comfyignore`).
-
-# 
 
 ## YouTube Intro Videos
 
