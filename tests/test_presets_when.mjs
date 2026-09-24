@@ -66,7 +66,7 @@ async function harness() {
                     "askText", "askConfirm", "notice"].map((k) => [k, noop])) });
         } else {
             let source = await readFile(new URL(name, root), "utf8");
-            source += "\nexport { rebuild, isShown, applyVisibility, rowOf, lineOf, schemaOf, readJson };";
+            source += "\nexport { rebuild, isShown, applyVisibility, rowOf, lineOf, schemaOf, readJson, asDropdown };";
             mod = new vm.SourceTextModule(source, { context, identifier: name });
         }
         cache.set(name, mod);
@@ -96,6 +96,9 @@ class Node {
     addWidget(type, name, value, callback, options) {
         const w = { type, name, value, callback, options: options ?? {} };
         this.widgets.push(w);
+        // frontend 1.53: a widget added under a name the node already
+        // has is renamed "name#1" on registration (ensureUniqueWidgetNames)
+        if (this.widgets.some((o) => o !== w && o.name === name)) w.name = name + "#1";
         return w;
     }
     addDOMWidget(name, type, element, options) {
@@ -201,4 +204,17 @@ test("editor rows carry the condition and hint and round-trip to the line", asyn
                  "z: int when spectrum = true");
     assert.ok(p.schemaOf(rows).endsWith("steps: int = 20\n"));
     assert.equal(p.schemaOf(rows).split("\n").length, FIELDS.length + 1);
+});
+
+test("the preset chooser keeps its name on a frontend that renames duplicates", async () => {
+    const { p } = await harness();
+    const node = new Node({});
+    // as declared by the server: a plain text widget, not yet swapped
+    Object.assign(field(node, "preset"), { type: "text", value: "vanilla" });
+    const combo = p.asDropdown(node, "preset", () => ["custom", "vanilla"]);
+    assert.equal(combo.name, "preset", "issue #12: renamed to preset#1 when the old widget was still there");
+    assert.equal(combo.type, "combo");
+    assert.equal(combo.value, "vanilla", "the value carried over");
+    assert.equal(node.widgets.filter((w) => w.name === "preset" || w.name === "preset#1").length, 1);
+    assert.equal(node.widgets.indexOf(combo), 1, "in the old widget's place");
 });

@@ -136,13 +136,22 @@ function asDropdown(node, name, valuesFn) {
         old.options.values = valuesFn;
         return old;
     }
-    const combo = node.addWidget("combo", name, old.value ?? "", () => {
+    // The old widget comes OUT before the combo goes in. Frontend 1.53
+    // renames a widget added under a name the node already has ("selected"
+    // -> "selected#1", ensureUniqueWidgetNames in addCustomWidget), and a
+    // chooser under the wrong name is one nothing else on the node can
+    // find (issue #12). Its value is carried across by hand: with the
+    // old widget gone, the store hands the combo its surviving state.
+    const value = old.value ?? "";
+    node.widgets.splice(index, 1);
+    const combo = node.addWidget("combo", name, value, () => {
         node.graph?.setDirtyCanvas(true);
     }, { values: valuesFn });
+    combo.value = value;                // through to the surviving state
     combo.serialize = true;
     const appended = node.widgets.indexOf(combo);
     if (appended >= 0) node.widgets.splice(appended, 1);
-    node.widgets[index] = combo;
+    node.widgets.splice(index, 0, combo);
     return combo;
 }
 
