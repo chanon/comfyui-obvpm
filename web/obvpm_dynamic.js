@@ -1060,15 +1060,6 @@ function installDiagnostic() {
 }
 
 /**
- * Keep the canvas renderer from drawing badges on a titleless node.
- *
- * Badges are drawn ABOVE the title bar. With no title there is nothing
- * under them, so they float detached in the space over the node. The
- * badge list is rebuilt by a watcher whenever the badge settings change,
- * so emptying the array once would not hold -- the property is replaced
- * with one that reads as empty and quietly swallows what is assigned.
- */
-/**
  * Take the text off the single bundle pin.
  *
  * On these nodes it is the only pin of its kind, so "in" / "out" says
@@ -1092,9 +1083,25 @@ function blankPlugPins(node) {
     }
 }
 
+/**
+ * Keep the canvas renderer from drawing badges on a titleless node.
+ *
+ * Badges are drawn ABOVE the title bar. With no title there is nothing
+ * under them, so they float detached in the space over the node.
+ *
+ * Frontend 1.53 draws two sets in `drawBadges`: the core rows (node id,
+ * pack name, lifecycle), which come from a store and are no longer in
+ * `node.badges` at all, and then the extensions' `node.badges`. So the
+ * draw itself is switched off on these nodes. The list is still emptied
+ * for the click hit-test, which reads only `node.badges`, and for older
+ * frontends; it is rebuilt by a watcher whenever the badge settings
+ * change, so the property reads as empty and quietly swallows what is
+ * assigned.
+ */
 function silenceBadges(node) {
     if (node.__obvpmBadgesSilenced) return;
     node.__obvpmBadgesSilenced = true;
+    node.drawBadges = () => {};
     try {
         Object.defineProperty(node, "badges", {
             configurable: true,
