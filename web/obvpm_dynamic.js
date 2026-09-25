@@ -7,7 +7,7 @@ import {
     addConfigButton, applyUnbundleLayout, hasUnbundleLayout,
     openBundleConfig, openUnbundleConfig,
 } from "./obvpm_bundle_config.js";
-import { el } from "./obvpm_ui.js";
+import { iconButton } from "./obvpm_ui.js";
 import { foldButton, installFold, isFolded, syncFold } from "./obvpm_fold.js";
 import {
     constantOf, isConstantSetter, isOurGetter, isOurSetter, isUnbundle,
@@ -1383,7 +1383,7 @@ app.registerExtension({
                 }
                 if (spec.config) {
                     addConfigButton(node, spec.config,
-                                    spec.fold ? [foldButton(node, el)] : []);
+                                    spec.fold ? [foldButton(node, iconButton)] : []);
                 }
                 // The auto Bundle runs the same list the other way round:
                 // the wires write it, rather than it describing the wires.

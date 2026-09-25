@@ -27,6 +27,7 @@ function fakeDocument() {
         addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
         fire(type) { for (const fn of this.listeners[type] ?? []) fn({ preventDefault() {}, stopPropagation() {}, target: this }); }
         focus() { doc.focused = this; }
+        setAttribute(k, v) { this.attrs[k] = String(v); }
         get textContent() { return this._text + this.children.map((c) => c.textContent ?? "").join(""); }
         set textContent(v) { this._text = String(v); this.children = []; }
         set href(v) { this.attrs.href = v; } get href() { return this.attrs.href; }
@@ -36,7 +37,8 @@ function fakeDocument() {
         querySelector(sel) { return this.all().slice(1).find((n) => sel.split(",").map((s) => s.trim()).includes(n.tag)) ?? null; }
     }
     const text = (t) => ({ tag: "#text", textContent: String(t), children: [] });
-    const doc = { createElement: (tag) => new Node(tag), createTextNode: text, focused: null };
+    const doc = { createElement: (tag) => new Node(tag), createElementNS: (ns, tag) => new Node(tag),
+                  createTextNode: text, focused: null };
     doc.body = new Node("body");
     return doc;
 }
@@ -86,7 +88,8 @@ async function load({ fetchApi, confirm } = {}) {
                                           b.nodeButton = true; b.addEventListener("click", () => run?.()); return b; },
             nodeButtonBar: (bs) => { const bar = document.createElement("div"); bar.nodeButtonBar = true;
                                      for (const b of bs) bar.appendChild(b); return bar; },
-            paintNodeButton() {} });
+            paintNodeButton() {},
+            icon: (name) => { const n = document.createElement("svg"); n.icon = name; return n; } });
         else {
             const source = (await readFile(new URL(name, root), "utf8"))
                 + "\nexport { paint, faceButtons, reportText, lineOf, entriesOf, serialize, openDetails, linkOf, authored };";
@@ -102,11 +105,12 @@ async function load({ fetchApi, confirm } = {}) {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
-const GEAR = "⚙︎";            // the dialog's settings (edit rules) button
+const GEAR = "Edit the rules";   // the dialog's settings button: an icon, found by its aria-label
 const buttons = (root) => root.all().filter((n) => n.tag === "button");
+const labelOf = (n) => n.attrs["aria-label"] ?? n.textContent;
 const press = async (root, label) => {
-    const b = buttons(root).find((n) => n.textContent === label);
-    assert.ok(b, "no button " + label + " in " + buttons(root).map((n) => n.textContent));
+    const b = buttons(root).find((n) => labelOf(n) === label);
+    assert.ok(b, "no button " + label + " in " + buttons(root).map(labelOf));
     await b.onClick?.();
     b.fire("click");
     await tick();
@@ -238,8 +242,11 @@ test("View Details: one table per kind, failures first, required / installed / l
     assert.equal(anchors.length, 1, "the javascript: url is not a link");
     assert.equal(anchors[0].href, "https://github.com/LBH-123-AI/x");
     assert.equal(anchors[0].attrs.rel, "noopener noreferrer");
-    assert.deepEqual(buttons(panel.children.at(-1)).map((n) => n.textContent),
+    assert.deepEqual(buttons(panel.children.at(-1)).map(labelOf),
                      ["Check Again", "Copy Report", GEAR, "Close"]);
+    const gear = buttons(panel.children.at(-1)).find((n) => labelOf(n) === GEAR);
+    assert.equal(gear.textContent, "", "no text glyph: its size would depend on the system's symbol font");
+    assert.equal(gear.children[0].icon, "gear");
 });
 
 test("rows become lines compat.py reads back (the strings test_compat.py parses)", async () => {

@@ -16,7 +16,7 @@ import {
     widget, bundleNamesFor, resyncGraph, labelSlot, notifyVue,
     repointLinks, linkById, originOf, derivedFor,
 } from "./obvpm_dynamic.js";
-import { el, TEXT, TITLE, DIM, pushButton, textBox,
+import { el, iconButton, TEXT, TITLE, DIM, pushButton, textBox,
          openOverlay } from "./obvpm_ui.js";
 import { constantOf, constantOn, findConstantSetter,
          setMode } from "./obvpm_constants.js";
@@ -552,34 +552,26 @@ export function openBundleConfig(node) {
 
 export function addConfigButton(node, open, before = []) {
     if (node.__obvpmCfgBtn) return;      // reload re-runs onNodeCreated
-    const container = el("div", {
+    const container = el("div", { overflow: "visible" });
+    // The icons sit 1px above the row's centre: the pins above them are
+    // the node's content, and the row reads as part of it. On an inner
+    // row, since the frontend positions the widget element itself.
+    const row = el("div", {
         display: "flex", alignItems: "center", justifyContent: "center",
-        overflow: "visible", gap: "2px",
+        position: "relative", top: "-1px", gap: "2px",
     });
+    container.appendChild(row);
     // Other controls that share the row (the fold button) go to the left
     // of the gear, which stays the rightmost.
-    for (const extra of before) container.appendChild(extra);
-    const b = el("button", {
-        background: "transparent", border: "none", cursor: "pointer",
-        color: "inherit", font: "12px/16px sans-serif", padding: "0 4px",
-        opacity: "0.7",
-    }, "⚙");
-    b.title = "Configure…";
-    b.addEventListener("mouseenter", () => { b.style.opacity = "1"; });
-    b.addEventListener("mouseleave", () => { b.style.opacity = "0.7"; });
-    b.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        open(node);
-    });
-    container.appendChild(b);
+    for (const extra of before) row.appendChild(extra);
+    row.appendChild(iconButton("gear", 11.25, "Configure", () => open(node), "Configure…"));
 
     // A tighter margin than the DOM-widget default (10): this row sits
     // on a compact, socket-sized node, and the default would more than
     // double its height. `margin` is honored by both renderers
     // (domWidget.ts onDraw and DomWidgets.vue read widget.margin).
     const MARGIN = 3;
-    const CONTENT = 16;
+    const CONTENT = 14;
     const w = node.addDOMWidget("obvpm_cfg", "div", container,
                                 { hideOnZoom: false, margin: MARGIN });
     w.serialize = false;

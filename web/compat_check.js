@@ -2,7 +2,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL, pushButton, openOverlay,
          askConfirm, themePalette, dropWidgetSockets, addPanelWidget,
-         nodeButton, nodeButtonBar, paintNodeButton } from "./obvpm_ui.js";
+         nodeButton, nodeButtonBar, paintNodeButton, icon } from "./obvpm_ui.js";
 
 /**
  * Compatibility Check: the rules, checked.
@@ -42,8 +42,6 @@ const AMBER = "rgba(220,170,60,0.8)";
 const RED_TEXT = "#ff8a8a";
 const GREEN_TEXT = "#7fd49a";
 const AMBER_TEXT = "#e8c060";
-// the settings icon; U+FE0E asks for the plain glyph, not a colour emoji
-const GEAR = "⚙︎";
 
 function widget(node, name) {
     return (node.widgets ?? []).find((w) => w.name === name);
@@ -1094,7 +1092,7 @@ function openDetails(node, ctx) {
             }
             if (!results.length && !answer?.error) {
                 body.appendChild(el("div", { color: DIM },
-                    "This node lists no requirements yet. The " + GEAR + " button adds them."));
+                    "This node lists no requirements yet. The settings button adds them."));
             }
         }
         // a row just added takes the caret, in its first input
@@ -1121,8 +1119,9 @@ function openDetails(node, ctx) {
             // Editing is for whoever wrote the workflow, not whoever runs
             // it: a settings icon after the buttons, not a labelled
             // button among them.
-            const gear = pushButton(GEAR, startEdit, { padding: "1px 9px", font: "19px sans-serif",
-                                                       lineHeight: "1.2" });
+            const gear = pushButton("", startEdit, { padding: "3px 8px", display: "flex",
+                                                     alignItems: "center" });
+            gear.appendChild(icon("gear", 18));
             gear.title = "Edit the rules (for the workflow's author)";
             gear.setAttribute?.("aria-label", "Edit the rules");
             foot.append(again,

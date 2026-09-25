@@ -10,6 +10,8 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 - Bundle / Unbundle: new **Set as a constant** / **Get from a constant** option in the ⚙ settings. Turned on, the node sets or gets a bundle by a constant name instead of a wire, like KJNodes Set/Get, and works together with them: a KJNodes Get can read a Bundle's set, and an Unbundle's get can read a KJNodes Set that carries a bundle. Collapsed, the node then shows "Set name" / "Get name". Off by default, so existing workflows are unchanged. See [Set / get by name](#set--get-by-name).
 - Unbundle: the cdialog now shows, for each field, whether the bundle on the wire (or the constant) has it: green yes, red no (that output gives None), grey when it can't be traced, with the reason.
+- Bundle / Unbundle: the collapse (−) and settings (⚙) buttons are now drawn as icons instead of text characters, so they are the same size on every system (on some installs the ⚙ came out tiny). The Compatibility Check's settings button got the same icon.
+- Bundle / Unbundle: fixed the node pack badge showing above the nodes again on ComfyUI frontend 1.53 in the classic (non Nodes 2.0) view.
 
 ### 0.2.6 (2026-09-25)
 

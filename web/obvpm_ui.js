@@ -381,6 +381,93 @@ export function el(tag, style, text) {
     return node;
 }
 
+/**
+ * Icons as inline SVG, never as text glyphs.
+ *
+ * Few fonts carry ⚙ (U+2699), so the browser borrows it from whatever
+ * symbol font the system has, and its size is that font's idea of it:
+ * the same 12px gear measured 11px here (Segoe UI Symbol) and 7px on a
+ * user's install. A path is the same size everywhere. Filled in
+ * `currentColor`, so it follows the button's color and hover.
+ */
+const ICON_NS = "http://www.w3.org/2000/svg";
+
+// 8 teeth around a hole, on a 16-unit grid, built once
+function gearPath() {
+    const c = 8, tip = 7.4, root = 5.5, hole = 2.4;
+    const at = (radius, deg) => {
+        const t = (deg - 90) * Math.PI / 180;
+        return (c + radius * Math.cos(t)).toFixed(2) + " " + (c + radius * Math.sin(t)).toFixed(2);
+    };
+    let d = "";
+    for (let i = 0; i < 8; i++) {
+        const a = i * 45;
+        d += (i ? "L" : "M") + at(root, a - 16) + "L" + at(tip, a - 9)
+            + "L" + at(tip, a + 9) + "L" + at(root, a + 16)
+            + "A" + root + " " + root + " 0 0 1 " + at(root, a + 45 - 16);
+    }
+    return d + "Z M" + (c + hole) + " " + c
+        + "A" + hole + " " + hole + " 0 1 0 " + (c - hole) + " " + c
+        + "A" + hole + " " + hole + " 0 1 0 " + (c + hole) + " " + c + "Z";
+}
+
+const ICON_PATHS = {
+    gear: gearPath(),
+    minus: "M3 7h10v2H3z",
+};
+
+export function icon(name, size = 14) {
+    const svg = document.createElementNS(ICON_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("width", String(size));
+    svg.setAttribute("height", String(size));
+    svg.setAttribute("aria-hidden", "true");
+    // the click belongs to the button around it
+    svg.style.display = "block";
+    svg.style.pointerEvents = "none";
+    const path = document.createElementNS(ICON_NS, "path");
+    path.setAttribute("d", ICON_PATHS[name] ?? "");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("fill-rule", "evenodd");
+    svg.appendChild(path);
+    return svg;
+}
+
+// A node's pin labels: the frontend's own variable, which both renderers
+// and every palette set (#a0a0a0 dark, #444 light); the canvas draws
+// them in LiteGraph.NODE_TEXT_COLOR, #AAA in the dark palette.
+export const PIN_TEXT = "var(--node-component-slot-text, #aaa)";
+export const PIN_TEXT_HOVER = "var(--fg-color, #fff)";
+
+/**
+ * A bare icon button on a node's face, drawn in the pin labels' color:
+ * the Bundle/Unbundle collapse and settings buttons.
+ */
+export function iconButton(name, size, label, run, tip = label) {
+    const b = el("button", {
+        background: "transparent", border: "none", cursor: "pointer",
+        color: PIN_TEXT, padding: "0 2px", height: "14px",
+        display: "flex", alignItems: "center", opacity: "0.7",
+    });
+    b.appendChild(icon(name, size));
+    b.setAttribute("aria-label", label);
+    b.title = tip;
+    b.addEventListener("mouseenter", () => {
+        b.style.color = PIN_TEXT_HOVER;
+        b.style.opacity = "1";
+    });
+    b.addEventListener("mouseleave", () => {
+        b.style.color = PIN_TEXT;
+        b.style.opacity = "0.7";
+    });
+    b.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        run();
+    });
+    return b;
+}
+
 export const TEXT = "14px sans-serif";
 export const TITLE = "600 16px sans-serif";
 

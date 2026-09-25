@@ -144,22 +144,11 @@ export function installFold(node, onChange, shiftOrigin = () => true) {
 }
 
 /**
- * The fold button for the ⚙ row. `el(tag, style, text)` is the UI kit's
- * element helper, passed in so this file needs no DOM of its own.
+ * The fold button for the ⚙ row. `iconButton` is the UI kit's, passed in
+ * so this file needs no DOM of its own.
  */
-export function foldButton(node, el) {
-    const b = el("button", {
-        background: "transparent", border: "none", cursor: "pointer",
-        color: "inherit", font: "12px/16px sans-serif", padding: "0 4px",
-        opacity: "0.7",
-    }, "−");
-    b.title = "Collapse";
-    b.addEventListener("mouseenter", () => { b.style.opacity = "1"; });
-    b.addEventListener("mouseleave", () => { b.style.opacity = "0.7"; });
-    b.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
+export function foldButton(node, iconButton) {
+    return iconButton("minus", 12, "Collapse", () => {
         if (!isFolded(node)) node.collapse();
     });
-    return b;
 }
