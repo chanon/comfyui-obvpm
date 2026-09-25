@@ -273,9 +273,12 @@ function headline(answer) {
  * passed. No coloured edge around it (the user: the red / green border
  * was too much). `frame` takes the text colour (the whole panel). The
  * buttons are not painted here: they sit under this list, outside the
- * scroll, and never change. Returns the failure count.
+ * scroll, and never change. `shown` (the author's text and links, see
+ * authorShown) follows the all-clear, and only the all-clear: an install
+ * that cannot run the workflow has the issues to read first. Returns the
+ * failure count.
  */
-function paint(list, answer, frame = list) {
+function paint(list, answer, frame = list, shown = null) {
     const P = themePalette();
     list.replaceChildren();
     frame.style.color = P.text;
@@ -316,9 +319,15 @@ function paint(list, answer, frame = list) {
             : "✓ " + passed + (passed === 1 ? " check passed" : " checks passed"));
     }
     if (unknown.length) tally.push("? " + unknown.length + " could not be checked");
-    // muted like the links note under the heading: both are asides
-    if (tally.length) list.appendChild(el("div", { color: DIM, opacity: "0.75", font: "10.5px sans-serif", paddingLeft: "4px" },
+    // muted like the links note under the heading: both are asides. Under
+    // the all-clear it belongs to the headline, as close to it as the
+    // author's text is to "From the workflow's author:" (the user's call;
+    // measured between the lines' ink: 7 px for both at 1x and 1.5x, where
+    // the list's gap alone left 12)
+    if (tally.length) list.appendChild(el("div", { color: DIM, opacity: "0.75", font: "10.5px sans-serif", paddingLeft: "4px",
+                                                   ...(failed.length ? {} : { marginTop: "-5px" }) },
                                           tally.join(" · ")));
+    if (!failed.length && (shown?.message || shown?.links?.length)) list.appendChild(authorShown(shown));
     return failed.length;
 }
 
@@ -434,6 +443,148 @@ function linkOf(url) {
     Object.assign(a.style, { color: "#7ab8ff", textDecoration: "underline",
                              whiteSpace: "nowrap" });
     return a;
+}
+
+// ---------------------------------------------------------------------
+// The author's links (shown when the install can run the workflow)
+// ---------------------------------------------------------------------
+
+/**
+ * Sites the author's links may open: places a reader knows by name, where
+ * a link is a repository, a video, a model page, a community or a way to
+ * support the author. A link elsewhere is shown as text, never opened
+ * from here. Matched on the parsed host: the name itself, or with `www.`
+ * or `m.` in front; `*.name` also takes any subdomain (only for a site
+ * whose every subdomain is its owner's). No URL shorteners: they hide
+ * where a link goes, which is what the list is for.
+ */
+const TRUSTED_SITES = [
+    // code
+    "github.com", "gist.github.com", "gitlab.com", "codeberg.org",
+    // models
+    "huggingface.co", "civitai.com",
+    // ComfyUI itself: the registry, docs, blog, forum
+    "comfy.org", "*.comfy.org",
+    // videos
+    "youtube.com", "youtu.be", "bilibili.com",
+    // community
+    "discord.com", "discord.gg", "reddit.com", "x.com", "twitter.com",
+    // supporting the author
+    "patreon.com", "ko-fi.com", "buymeacoffee.com",
+];
+
+/** At most this many links, this long a label, this long a text: a
+ *  short word and a list, not a page. */
+const LINKS_MAX = 20;
+const LINK_LABEL_MAX = 120;
+const MESSAGE_MAX = 2000;
+// in node.properties: saved with the workflow, never sent with a run,
+// and invisible to an older obvpm (its widgets_values line up as before)
+const MESSAGE_PROP = "compatible_message";
+const LINKS_PROP = "compatible_links";
+
+/** The list for people: "comfy.org (and its subdomains)", not "*.comfy.org". */
+function siteNames() {
+    return TRUSTED_SITES.filter((s) => !s.startsWith("*."))
+        .map((s) => (TRUSTED_SITES.includes("*." + s) ? s + " (and its subdomains)" : s))
+        .join(", ");
+}
+
+function trustedSite(hostname) {
+    const host = String(hostname ?? "").toLowerCase().replace(/^(www|m)\./, "");
+    return TRUSTED_SITES.some((site) => (site.startsWith("*.")
+        ? host.endsWith(site.slice(1)) : host === site));
+}
+
+/**
+ * An author's link, if it may be opened: {href, site} with the host as
+ * the parser spells it (punycode for a look-alike), or null. The same
+ * refusals as linkOf: only http(s), no user name or password, no port;
+ * the site must be a trusted one. http is opened as https.
+ */
+function trustedLink(url) {
+    let parsed;
+    try {
+        parsed = new URL(String(url ?? "").trim());
+    } catch (err) {
+        return null;
+    }
+    if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password
+        || parsed.port || !trustedSite(parsed.hostname)) return null;
+    parsed.protocol = "https:";
+    return { href: parsed.href, site: parsed.hostname.replace(/^(www|m)\./, "") };
+}
+
+/** What the node shows when compatible, as stored (node.properties):
+ *  {message, links}, cleaned and cut to size, never trusted. */
+function shownOf(node) {
+    const props = node?.properties ?? {};
+    const stored = Array.isArray(props[LINKS_PROP]) ? props[LINKS_PROP] : [];
+    return {
+        message: String(props[MESSAGE_PROP] ?? "").trim().slice(0, MESSAGE_MAX),
+        links: stored.slice(0, LINKS_MAX).map((item) => ({
+            text: String(item?.text ?? "").replace(/\s+/g, " ").trim().slice(0, LINK_LABEL_MAX),
+            url: String(item?.url ?? "").trim(),
+        })).filter((item) => item.text || item.url),
+    };
+}
+
+/** Store what the node shows when compatible (an empty part is removed). */
+function storeShown(node, { message, links }) {
+    const props = (node.properties ??= {});
+    const text = String(message ?? "").trim().slice(0, MESSAGE_MAX);
+    const kept = (links ?? []).map((i) => ({ text: String(i?.text ?? "").trim().slice(0, LINK_LABEL_MAX),
+                                             url: String(i?.url ?? "").trim() }))
+        .filter((i) => i.text || i.url).slice(0, LINKS_MAX);
+    if (text) props[MESSAGE_PROP] = text;
+    else delete props[MESSAGE_PROP];
+    if (kept.length) props[LINKS_PROP] = kept;
+    else delete props[LINKS_PROP];
+}
+
+/**
+ * One author's link: the label as the anchor, then the site it really
+ * goes to, so the label cannot pass one place off as another. A link the
+ * list does not trust is the label and the address as plain text.
+ */
+function authorLink(item) {
+    const line = el("div", { display: "flex", flexWrap: "wrap", alignItems: "baseline",
+                             columnGap: "6px", overflowWrap: "anywhere" });
+    const label = item.text || item.url;
+    const link = trustedLink(item.url);
+    if (!link) {
+        line.appendChild(el("span", {}, label));
+        if (item.text && item.url) line.appendChild(el("span", { color: DIM }, item.url));
+        line.title = "Not a link: only trusted sites are opened from here.";
+        return line;
+    }
+    const a = document.createElement("a");
+    a.href = link.href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.title = link.href;
+    a.textContent = label;
+    Object.assign(a.style, { color: "#7ab8ff", textDecoration: "underline" });
+    // the canvas starts a drag on pointerdown: keep it off the link
+    a.addEventListener?.("pointerdown", (ev) => ev.stopPropagation());
+    line.append(a, el("span", { color: DIM, font: "10.5px sans-serif", whiteSpace: "nowrap" },
+                      link.site + " ↗"));
+    return line;
+}
+
+/** The author's text and links under the all-clear, headed by whose
+ *  they are. The text is plain: shown as written, line breaks kept. */
+function authorShown({ message, links }) {
+    const box = el("div", { display: "flex", flexDirection: "column", gap: "3px",
+                            paddingLeft: "4px", marginTop: "2px" });
+    box.appendChild(el("div", { color: DIM, opacity: "0.75", font: "10.5px sans-serif" },
+                       "From the workflow's author:"));
+    if (message) {
+        box.appendChild(el("div", { whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+                                    marginBottom: links.length ? "3px" : "0" }, message));
+    }
+    for (const item of links) box.appendChild(authorLink(item));
+    return box;
 }
 
 function badge(result) {
@@ -728,6 +879,172 @@ function section(group, list, mode, hooks = {}) {
         wrap.appendChild(add);
     }
     return wrap;
+}
+
+/** Where an author's link goes, for its table: the site, or why it is text. */
+function linkStatus(url) {
+    if (!String(url ?? "").trim()) return el("span", { color: DIM }, "—");
+    const link = trustedLink(url);
+    if (link) return el("span", { color: GREEN_TEXT, whiteSpace: "nowrap" }, "✓ " + link.site);
+    const s = el("span", { color: AMBER_TEXT }, "shown as text");
+    s.title = "Not on the list of trusted sites: shown, never opened from here.";
+    return s;
+}
+
+/**
+ * The author's links as a table to edit, like the rules' (section):
+ * `items` are the draft rows, changed in place; hooks: add, remove,
+ * move (▲ ▼ first in the row, as in the Bundle / Unbundle settings).
+ */
+function linksTable(items, hooks = {}) {
+    const wrap = el("div", { display: "flex", flexDirection: "column", gap: "4px" });
+    const title = el("div", { display: "flex", alignItems: "baseline", gap: "8px",
+                              flexWrap: "wrap", paddingBottom: "2px" });
+    title.append(el("span", { font: "600 14px sans-serif" }, "Links"),
+                 el("span", { color: DIM, font: "12px sans-serif" },
+                    "Only these sites open from the node: " + siteNames()
+                    + ". Any other address is shown as text."));
+    wrap.appendChild(title);
+    const scroller = el("div", { overflowX: "auto" });
+    const table = el("table", { borderCollapse: "collapse", width: "100%", font: "13px sans-serif" });
+    const head = el("tr", {});
+    for (const label of ["", "Text", "Link", "Opens", ""]) {
+        head.appendChild(el("th", { ...CELL, color: DIM, fontWeight: "600", whiteSpace: "nowrap" }, label));
+    }
+    const thead = el("thead", {});
+    thead.appendChild(head);
+    const tbody = el("tbody", {});
+    table.append(thead, tbody);
+    scroller.appendChild(table);
+    wrap.appendChild(scroller);
+    if (!items.length) {
+        const tr = el("tr", {});
+        const td = el("td", { ...CELL, color: DIM }, "none yet");
+        td.colSpan = 5;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
+    for (const item of items) {
+        const tr = el("tr", {});
+        const statusCell = el("td", { ...CELL });
+        statusCell.appendChild(linkStatus(item.url));
+        const input = (field, placeholder, min, max) => {
+            const box = el("input", {
+                background: FILL, color: INK, border: "1px solid " + EDGE,
+                borderRadius: "4px", padding: "3px 6px", font: "13px sans-serif",
+                width: "100%", minWidth: min, boxSizing: "border-box",
+            });
+            box.type = "text";
+            box.value = item[field] ?? "";
+            box.placeholder = placeholder;
+            box.spellcheck = false;
+            if (max) box.maxLength = max;
+            box.addEventListener("input", () => {
+                item[field] = box.value;
+                if (field === "url") statusCell.replaceChildren(linkStatus(item.url));
+            });
+            return box;
+        };
+        const text = el("td", { ...CELL });
+        text.appendChild(input("text", "Watch the tutorial", "160px", LINK_LABEL_MAX));
+        const url = el("td", { ...CELL });
+        url.appendChild(input("url", "https://www.youtube.com/watch?v=…", "220px"));
+        const td = el("td", { ...CELL, width: "1%" });
+        const remove = pushButton("✕", () => hooks.remove?.(item),
+                                  { padding: "2px 8px", font: "12px sans-serif" });
+        remove.title = "Remove this link";
+        td.appendChild(remove);
+        const order = el("td", { ...CELL, width: "1%", whiteSpace: "nowrap" });
+        const up = pushButton("▲", () => hooks.move?.(item, -1), { padding: "1px 5px" });
+        const down = pushButton("▼", () => hooks.move?.(item, 1), { padding: "1px 5px", marginLeft: "4px" });
+        up.title = "Move up";
+        down.title = "Move down";
+        order.append(up, down);
+        tr.append(order, text, url, statusCell, td);
+        tbody.appendChild(tr);
+        item.tr = tr;
+    }
+    if (items.length < LINKS_MAX) {
+        const add = pushButton("+ Add", () => hooks.add?.(),
+                               { alignSelf: "flex-start", padding: "2px 10px", font: "12px sans-serif" });
+        add.title = "Add a link";
+        wrap.appendChild(add);
+    }
+    return wrap;
+}
+
+/**
+ * What the node shows when the install can run the workflow, edited in a
+ * pop over View Details (Escape and a click outside close it and only
+ * it): a plain text, then a list of links. Nothing is stored until OK.
+ */
+function openShownPop(overlay, shown, onSave) {
+    const pop = el("div", {
+        position: "fixed", inset: "0", zIndex: "10001",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "rgba(0,0,0,0.35)",
+    });
+    const card = el("div", {
+        background: PANEL, color: INK, font: TEXT,
+        border: "1px solid " + EDGE, borderRadius: "8px", padding: "14px",
+        width: "min(860px, 92vw)", maxHeight: "82vh", boxSizing: "border-box",
+        display: "flex", flexDirection: "column", gap: "10px",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+    });
+    const body = el("div", { flex: "1 1 auto", minHeight: "0", overflow: "auto",
+                             display: "flex", flexDirection: "column", gap: "14px" });
+    const legend = el("div", { color: DIM, font: "12px sans-serif" },
+        "Shown on the node, under \"This install can run the workflow\", as the "
+        + "workflow author's words. Not shown while anything fails.");
+    const area = el("textarea", {
+        background: FILL, color: INK, border: "1px solid " + EDGE,
+        borderRadius: "4px", padding: "6px 8px", font: TEXT,
+        minHeight: "90px", resize: "vertical", boxSizing: "border-box",
+    });
+    area.value = shown.message;
+    area.maxLength = MESSAGE_MAX;
+    area.placeholder = "Plain text, shown above the links, e.g. what to do first";
+    const textPart = el("div", { display: "flex", flexDirection: "column", gap: "4px" });
+    textPart.append(el("span", { font: "600 14px sans-serif" }, "Text"), area);
+    const draft = shown.links.map((i) => ({ text: i.text, url: i.url }));
+    const linksPart = el("div", {});
+    const drawLinks = (focusLast = false) => {
+        linksPart.replaceChildren(linksTable(draft, {
+            add: () => {
+                draft.push({ text: "", url: "" });
+                drawLinks(true);
+            },
+            move: (item, delta) => {
+                const from = draft.indexOf(item), to = from + delta;
+                if (from < 0 || to < 0 || to >= draft.length) return;
+                draft.splice(to, 0, draft.splice(from, 1)[0]);
+                drawLinks();
+            },
+            remove: (item) => {
+                draft.splice(draft.indexOf(item), 1);
+                drawLinks();
+            },
+        }));
+        if (focusLast) draft.at(-1)?.tr?.querySelector?.("input")?.focus?.();
+    };
+    drawLinks();
+    body.append(textPart, linksPart);
+    const close = () => pop.remove();
+    const footer = el("div", { display: "flex", gap: "6px", justifyContent: "flex-end" });
+    footer.append(pushButton("Cancel", close), pushButton("OK", () => {
+        onSave({ message: area.value, links: draft });
+        close();
+    }, { fontWeight: "600" }));
+    card.append(el("div", { font: TITLE }, "Shown when compatible"), legend, body, footer);
+    pop.appendChild(card);
+    pop.addEventListener("mousedown", (ev) => {
+        if (ev.target === pop) close();
+    });
+    pop.obvpmClose = close;
+    pop.dataset.obvpmPop = "1";      // Escape closes this first
+    overlay.appendChild(pop);
+    area.focus();
+    return pop;
 }
 
 // ---------------------------------------------------------------------
@@ -1124,9 +1441,16 @@ function openDetails(node, ctx) {
             gear.appendChild(icon("gear", 18));
             gear.title = "Edit the rules (for the workflow's author)";
             gear.setAttribute?.("aria-label", "Edit the rules");
+            // also the author's: what the node says when everything passes
+            const shown = pushButton("Message & Links", () => {
+                openShownPop(overlay, ctx.shown?.() ?? { message: "", links: [] },
+                             (next) => ctx.setShown?.(next));
+            });
+            shown.title = "Text and links the node shows when the install can run the "
+                + "workflow (for the workflow's author)";
             foot.append(again,
                         pushButton("Copy Report", () => void copyReport(ctx.answer())),
-                        gear, spacer, pushButton("Close", close));
+                        shown, gear, spacer, pushButton("Close", close));
         }
     }
 
@@ -1161,10 +1485,23 @@ function setup(node) {
     const panelWidget = addPanelWidget(node, PANEL_NAME, panel, { minHeight: 80, scroller: list, margin: 6 });
 
     let answer = null;
+    const repaint = () => {
+        paint(list, answer, panel, shownOf(node));
+        // the palette is resolved colours: follow a theme change
+        for (const b of buttons.children) paintNodeButton(b);
+        panelWidget.fitToContent?.();
+    };
     const ctx = {
         rules,
         answer: () => answer,
         refresh: () => refresh(),
+        // the author's text and links, shown under the all-clear
+        shown: () => shownOf(node),
+        setShown: (shown) => {
+            storeShown(node, shown);
+            if (answer) repaint();
+            node.setDirtyCanvas?.(true, true);
+        },
     };
     const actions = {
         details: () => openDetails(node, ctx),
@@ -1190,10 +1527,7 @@ function setup(node) {
             }
             if (String(rules?.value ?? "") !== text) return refresh();   // stale
             answer = got;
-            paint(list, answer, panel);
-            // the palette is resolved colours: follow a theme change
-            for (const b of buttons.children) paintNodeButton(b);
-            panelWidget.fitToContent?.();
+            repaint();
         })();
         return inFlight;
     }

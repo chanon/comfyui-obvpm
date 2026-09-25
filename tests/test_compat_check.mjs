@@ -92,7 +92,7 @@ async function load({ fetchApi, confirm } = {}) {
             icon: (name) => { const n = document.createElement("svg"); n.icon = name; return n; } });
         else {
             const source = (await readFile(new URL(name, root), "utf8"))
-                + "\nexport { paint, faceButtons, reportText, lineOf, entriesOf, serialize, openDetails, linkOf, authored };";
+                + "\nexport { paint, faceButtons, reportText, lineOf, entriesOf, serialize, openDetails, linkOf, authored, trustedLink, shownOf, storeShown, TRUSTED_SITES };";
             mod = new vm.SourceTextModule(source, { context, identifier: name });
         }
         cache.set(name, mod);
@@ -243,7 +243,7 @@ test("View Details: one table per kind, failures first, required / installed / l
     assert.equal(anchors[0].href, "https://github.com/LBH-123-AI/x");
     assert.equal(anchors[0].attrs.rel, "noopener noreferrer");
     assert.deepEqual(buttons(panel.children.at(-1)).map(labelOf),
-                     ["Check Again", "Copy Report", GEAR, "Close"]);
+                     ["Check Again", "Copy Report", "Message & Links", GEAR, "Close"]);
     const gear = buttons(panel.children.at(-1)).find((n) => labelOf(n) === GEAR);
     assert.equal(gear.textContent, "", "no text glyph: its size would depend on the system's symbol font");
     assert.equal(gear.children[0].icon, "gear");
@@ -578,4 +578,163 @@ test("the report names ComfyUI's commit when the server found one", async () => 
     } finally {
         delete REPORT.comfyui_commit;
     }
+});
+
+test("an author's link opens only on a trusted site, by its parsed host", async () => {
+    const { trustedLink } = await load();
+    const site = (url) => trustedLink(url)?.site ?? null;
+    assert.equal(site("https://github.com/chanon/comfyui-obvpm"), "github.com");
+    assert.equal(site("https://www.youtube.com/watch?v=abc"), "youtube.com");
+    assert.equal(site("https://m.youtube.com/watch?v=abc"), "youtube.com");
+    assert.equal(site("https://youtu.be/abc"), "youtu.be");
+    assert.equal(site("https://discord.gg/xyz"), "discord.gg");
+    assert.equal(site("https://docs.comfy.org/"), "docs.comfy.org", "any comfy.org subdomain");
+    assert.equal(trustedLink("http://www.patreon.com/cw/obvpm").href, "https://www.patreon.com/cw/obvpm",
+                 "http is opened as https");
+    for (const bad of [
+        "https://github.com.evil.example/x",          // the name as a prefix
+        "https://evil.example/github.com",            // the name in the path
+        "https://notgithub.com/x", "https://evilcomfy.org/", "https://gist.github.com.evil.example/",
+        "https://github.com@evil.example/",           // goes to evil.example
+        "https://user:pw@github.com/x",
+        "https://github.com:8443/x",
+        "https://xn--gthub-cta.com/x",                // a look-alike in punycode
+        "javascript:alert(1)", "data:text/html,<b>x</b>", "ftp://github.com/x",
+        "https://bit.ly/abc",                         // shorteners hide where a link goes
+        "github.com/x", "",
+    ]) assert.equal(trustedLink(bad), null, bad);
+});
+
+test("what the node shows when compatible is stored in its properties, cleaned", async () => {
+    const { shownOf, storeShown } = await load();
+    // (objects from the vm: compared as JSON, their prototypes are another realm's)
+    assert.equal(JSON.stringify(shownOf({})), JSON.stringify({ message: "", links: [] }));
+    const node = { properties: { "Node name for S&R": "x" } };
+    storeShown(node, { message: "  Hello\nthere  ",
+                       links: [{ text: " Video ", url: " https://youtu.be/a " }, { text: "", url: "" },
+                               { text: "x".repeat(500), url: "https://github.com/a" }] });
+    assert.equal(node.properties.compatible_message, "Hello\nthere", "line breaks kept");
+    assert.equal(JSON.stringify(node.properties.compatible_links[0]), JSON.stringify({ text: "Video", url: "https://youtu.be/a" }));
+    assert.equal(node.properties.compatible_links.length, 2, "an empty row is dropped");
+    assert.equal(shownOf(node).links[1].text.length, 120, "a label is cut to size");
+    assert.equal(node.properties["Node name for S&R"], "x", "other properties untouched");
+    // what a shared workflow holds is cleaned on the way out, not trusted
+    const odd = { properties: { compatible_message: 42, compatible_links: [{ text: { a: 1 }, url: 7 }, null,
+                  ...Array.from({ length: 40 }, (_, i) => ({ text: "l" + i, url: "" }))] } };
+    const got = shownOf(odd);
+    assert.equal(got.message, "42");
+    assert.ok(got.links.length <= 20);
+    assert.ok(got.links.every((l) => typeof l.text === "string" && typeof l.url === "string"));
+    assert.equal(shownOf({ properties: { compatible_links: "not a list" } }).links.length, 0);
+    storeShown(node, { message: " ", links: [] });
+    assert.ok(!("compatible_message" in node.properties) && !("compatible_links" in node.properties),
+              "emptied parts are removed");
+});
+
+test("the face shows the author's text and links under the all-clear, and only then", async () => {
+    const { paint, document } = await load();
+    const shown = { message: "Set <b>your</b> project name first.\nThen run.",
+                    links: [{ text: "Watch the tutorial", url: "https://www.youtube.com/watch?v=abc" },
+                            { text: "github.com/comfy-org/ComfyUI", url: "https://github.com/evil/x" },
+                            { text: "My site", url: "https://my.example/page" }] };
+    const panel = document.createElement("div");
+    paint(panel, { results: [ANSWER.results[0]] }, panel, shown);
+    const text = panel.textContent;
+    assert.match(text, /This install can run the workflow/);
+    assert.match(text, /From the workflow's author:/);
+    const message = panel.all().find((n) => n.style?.whiteSpace === "pre-wrap");
+    assert.equal(message.textContent, shown.message, "the text as written: markup stays text");
+    assert.ok(!panel.all().some((n) => n.tag === "b"), "no element made from the text");
+    const anchors = panel.all().filter((n) => n.tag === "a");
+    assert.deepEqual(anchors.map((a) => a.href), ["https://www.youtube.com/watch?v=abc", "https://github.com/evil/x"]);
+    assert.deepEqual(anchors.map((a) => a.attrs.rel), ["noopener noreferrer", "noopener noreferrer"]);
+    // the site each really goes to is shown beside the label
+    assert.match(anchors[1].parent.textContent, /^github\.com\/comfy-org\/ComfyUIgithub\.com ↗$/);
+    assert.match(anchors[0].parent.textContent, /youtube\.com ↗$/);
+    assert.match(text, /My sitehttps:\/\/my\.example\/page/, "an untrusted site: label and address as text");
+    // anything failing: the issues only
+    const failing = document.createElement("div");
+    paint(failing, ANSWER, failing, shown);
+    assert.ok(!failing.textContent.includes("From the workflow's author"));
+    assert.ok(!failing.textContent.includes("Watch the tutorial"));
+    // nothing set: nothing extra
+    const plain = document.createElement("div");
+    paint(plain, { results: [ANSWER.results[0]] }, plain, { message: "", links: [] });
+    assert.ok(!plain.textContent.includes("author"));
+});
+
+test("Message & Links: a pop over View Details; OK stores, Cancel and Escape do not", async () => {
+    const { openDetails, overlays } = await load();
+    let stored = { message: "Hi", links: [{ text: "Code", url: "https://github.com/a/b" }] };
+    const saves = [];
+    openDetails({}, { rules: { value: TEXT }, answer: () => ANSWER, refresh: async () => {},
+                      shown: () => stored, setShown: (next) => { saves.push(next); stored = next; } });
+    const o = overlays[0];
+    await press(o.panel, "Message & Links");
+    const pop = o.overlay.children.at(-1);
+    assert.ok(pop.dataset.obvpmPop, "a pop: Escape closes it first");
+    assert.match(pop.textContent, /Shown when compatible/);
+    const area = pop.all().find((n) => n.tag === "textarea");
+    assert.equal(area.value, "Hi");
+    let inputs = pop.all().filter((n) => n.tag === "input");
+    assert.deepEqual(inputs.map((n) => n.value), ["Code", "https://github.com/a/b"]);
+    assert.match(pop.textContent, /✓ github\.com/);
+    // add a link to a site not on the list: flagged while typing
+    await press(pop, "+ Add");
+    inputs = pop.all().filter((n) => n.tag === "input");
+    inputs[2].value = "Blog"; inputs[2].fire("input");
+    inputs[3].value = "https://blog.example/post"; inputs[3].fire("input");
+    assert.match(pop.textContent, /shown as text/);
+    area.value = "Read me first";
+    await press(pop, "OK");
+    assert.ok(!o.overlay.children.includes(pop), "closed");
+    assert.equal(saves.length, 1);
+    assert.equal(saves[0].message, "Read me first");
+    assert.deepEqual(saves[0].links.map((l) => [l.text, l.url]),
+                     [["Code", "https://github.com/a/b"], ["Blog", "https://blog.example/post"]]);
+    // remove one and cancel: nothing stored
+    await press(o.panel, "Message & Links");
+    const pop2 = o.overlay.children.at(-1);
+    await press(pop2, "✕");
+    await press(pop2, "Cancel");
+    assert.equal(saves.length, 1, "Cancel stores nothing");
+    await press(o.panel, "Message & Links");
+    o.escape();
+    assert.ok(!o.overlay.children.some((c) => c.dataset.obvpmPop), "Escape closed the pop");
+    assert.ok(!o.closed, "and only the pop");
+    assert.equal(saves.length, 1);
+});
+
+test("Message & Links: ▲ ▼ reorder the links (no-ops at the ends), stored in the new order", async () => {
+    const { openDetails, overlays } = await load();
+    const links = [{ text: "A", url: "https://github.com/a" }, { text: "B", url: "https://youtu.be/b" },
+                   { text: "C", url: "https://discord.gg/c" }];
+    const saves = [];
+    openDetails({}, { rules: { value: TEXT }, answer: () => ANSWER, refresh: async () => {},
+                      shown: () => ({ message: "", links }), setShown: (next) => saves.push(next) });
+    const o = overlays[0];
+    await press(o.panel, "Message & Links");
+    const pop = o.overlay.children.at(-1);
+    const texts = () => pop.all().filter((n) => n.tag === "input" && n.placeholder === "Watch the tutorial")
+        .map((n) => n.value);
+    const rowButtons = (label) => buttons(pop).filter((b) => b.textContent === label);
+    assert.deepEqual(texts(), ["A", "B", "C"]);
+    assert.equal(rowButtons("▲").length, 3, "one pair per row");
+    await rowButtons("▲")[0].onClick();                // first row up: nothing
+    await rowButtons("▼")[2].onClick();                // last row down: nothing
+    assert.deepEqual(texts(), ["A", "B", "C"]);
+    await rowButtons("▼")[0].onClick();                // A down
+    assert.deepEqual(texts(), ["B", "A", "C"]);
+    await rowButtons("▲")[2].onClick();                // C up
+    assert.deepEqual(texts(), ["B", "C", "A"]);
+    // an edit typed before a move goes with its row
+    const input = pop.all().find((n) => n.tag === "input" && n.value === "A");
+    input.value = "A2"; input.fire("input");
+    await rowButtons("▲")[2].onClick();
+    assert.deepEqual(texts(), ["B", "A2", "C"]);
+    assert.equal(links[0].text, "A", "the stored list is untouched until OK");
+    await press(pop, "OK");
+    assert.deepEqual(saves[0].links.map((l) => l.text), ["B", "A2", "C"]);
+    assert.deepEqual(saves[0].links.map((l) => l.url),
+                     ["https://youtu.be/b", "https://github.com/a", "https://discord.gg/c"], "the urls move with them");
 });

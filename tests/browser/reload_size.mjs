@@ -6,7 +6,9 @@
 // loads the workflow five times, printing the size each round. Exits 1
 // if the size ever changes after a load.
 //
-// usage: node reload_size.mjs <url> [--vue] [--node=<NodeId>] [--drag=H]
+// usage: node reload_size.mjs <url> [--vue] [--node=<NodeId>] [--drag=H] [--props=<json>]
+//   --props: merged into the new node's properties (e.g. what a
+//   Compatibility Check shows when compatible), so they load every round
 //
 // Touches nothing on the server: the settings the page reads are
 // rewritten in flight (Nodes 2.0 on or off for this tab only) and every
@@ -17,6 +19,7 @@ const url = process.argv[2] ?? "http://127.0.0.1:8188/";
 const VUE = process.argv.includes("--vue");
 const NODE = process.argv.find((a) => a.startsWith("--node="))?.slice(7) ?? "CompatibilityCheck (obvpm)";
 const DRAG = Number(process.argv.find((a) => a.startsWith("--drag="))?.slice(7) ?? 0);
+const PROPS = JSON.parse(process.argv.find((a) => a.startsWith("--props="))?.slice(8) ?? "{}");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await puppeteer.launch({
@@ -47,11 +50,12 @@ await page.goto(url, { waitUntil: "networkidle2", timeout: 120000 });
 await page.waitForFunction(() => window.app?.graph && window.app?.canvas, { timeout: 120000 });
 await sleep(4000);
 
-let wf = await page.evaluate(async (type, drag) => {
+let wf = await page.evaluate(async (type, drag, props) => {
     const app = window.app;
     app.graph.clear();
     const node = LiteGraph.createNode(type);
     node.pos = [200, 150];
+    Object.assign((node.properties ??= {}), props);
     app.graph.add(node);
     await new Promise((r) => setTimeout(r, 2500));      // let it settle (and fit)
     if (drag) {
@@ -59,7 +63,7 @@ let wf = await page.evaluate(async (type, drag) => {
         await new Promise((r) => setTimeout(r, 800));
     }
     return app.graph.serialize();
-}, NODE, DRAG);
+}, NODE, DRAG, PROPS);
 const sizeOf = (w) => w.nodes.find((n) => n.type === NODE)?.size.map(Math.round);
 const saved = sizeOf(wf);
 const rounds = [(DRAG ? "dragged " : "created ") + JSON.stringify(saved)];

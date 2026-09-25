@@ -6,6 +6,10 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### 0.2.8 (2026-09-26)
+
+- Compatibility Check: new **Message & Links** in the details, for workflow authors: a short text and a list of links the node shows when the install can run the workflow (for example a tutorial video, a Discord, a support page). Links open only on trusted sites (GitHub, GitLab, Hugging Face, Civitai, YouTube, Discord, Patreon and a few more), with the real site shown next to each. See [Message & Links](#message--links).
+
 ### 0.2.7 (2026-09-25)
 
 - Bundle / Unbundle: new **Set as a constant** / **Get from a constant** option in the ⚙ settings. Turned on, the node sets or gets a bundle by a constant name instead of a wire, like KJNodes Set/Get, and works together with them: a KJNodes Get can read a Bundle's set, and an Unbundle's get can read a KJNodes Set that carries a bundle. Collapsed, the node then shows "Set name" / "Get name". Off by default, so existing workflows are unchanged. See [Set / get by name](#set--get-by-name).
@@ -361,6 +365,12 @@ Five kinds of rule:
 - **`some-pack >= 1.2.0 https://github.com/owner/repo`** — a pack's version, read from the installed pack's `pyproject.toml`. The pack is found by its repository URL (matched against the `[project.urls]` in its `pyproject.toml` and the git remote it was cloned from, however either is written), else by name (the name in its `pyproject.toml`, or its folder under `custom_nodes`, any case), so it works however the pack was installed and whatever its folder is called. If a pack is found by name but comes from a different repository (a fork, or a renamed repository), the result says so without refusing the run; `node NodeId has input_name` is what catches a fork that loads the workflow wrong. (Older rules with `node: NodeId` still work.)
 - **`node NodeId`** / **`node NodeId has input_name`** — a node must be present, or must declare an input. The second form tells a fork that registers the **same node name with different widgets** apart from the original, which loads a saved workflow wrong and nothing else reports.
 - **`not node NodeId`** / **`not pack Name`** — a node or a pack that must **not** be installed, for the packs known to break the workflow when they are present. `not node` fails while any installed pack registers a node with that id, and names the pack's folder. `not pack` finds the pack the same way a pack rule does: by the repository URL on the line (`not pack https://github.com/owner/repo` needs no name), else by its `pyproject.toml` name or folder.
+
+### Message & Links
+
+When the install can run the workflow, the node can show a short text and a list of links from the workflow's author under the all-clear: what to do first, a tutorial video, where to ask for help, a support page. Set them with **Message & Links** in the details: a plain text box and a table of links (text + address), put in order with the ▲ ▼ buttons. Nothing is shown while any check fails, so the issues come first.
+
+The text is shown exactly as written (no Markdown or HTML). A link opens only on a trusted site, and the site it really goes to is shown next to its text: github.com, gist.github.com, gitlab.com, codeberg.org, huggingface.co, civitai.com, comfy.org (and its subdomains), youtube.com, youtu.be, bilibili.com, discord.com, discord.gg, reddit.com, x.com, twitter.com, patreon.com, ko-fi.com and buymeacoffee.com. Any other address is shown as plain text, not as a link. Both are saved with the workflow in the node's properties.
 
 ### Copy Report
 
