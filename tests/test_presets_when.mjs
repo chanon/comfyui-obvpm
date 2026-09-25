@@ -37,8 +37,12 @@ const FIELDS = [
 async function harness() {
     const extensions = [];
     const app = { registerExtension: (ext) => extensions.push(ext), canvas: {} };
+    const asked = { schema: 0 };
     const api = { fetchApi: async (url) => {
-        if (url === "/obvpm/presets/schema") return { json: async () => ({ fields: FIELDS }) };
+        if (url === "/obvpm/presets/schema") {
+            asked.schema += 1;
+            return { json: async () => ({ fields: FIELDS }) };
+        }
         throw new Error("Offline test: " + url);
     } };
     const context = vm.createContext({
@@ -67,7 +71,9 @@ async function harness() {
                     "nodeButton", "nodeButtonBar", "paintNodeButton"].map((k) => [k, noop])) });
         } else {
             let source = await readFile(new URL(name, root), "utf8");
-            source += "\nexport { rebuild, isShown, applyVisibility, rowOf, lineOf, schemaOf, readJson, asDropdown };";
+            if (name === "value_presets.js") {
+                source += "\nexport { rebuild, isShown, applyVisibility, rowOf, lineOf, schemaOf, readJson, asDropdown };";
+            }
             mod = new vm.SourceTextModule(source, { context, identifier: name });
         }
         cache.set(name, mod);
@@ -76,7 +82,7 @@ async function harness() {
     }
     const mod = await load("value_presets.js");
     await mod.evaluate();
-    return { p: mod.namespace, extensions };
+    return { p: mod.namespace, extensions, asked };
 }
 
 /** A litegraph-shaped node: enough for rebuild() to run against. */
@@ -218,4 +224,49 @@ test("the preset chooser keeps its name on a frontend that renames duplicates", 
     assert.equal(combo.value, "vanilla", "the value carried over");
     assert.equal(node.widgets.filter((w) => w.name === "preset" || w.name === "preset#1").length, 1);
     assert.equal(node.widgets.indexOf(combo), 1, "in the old widget's place");
+});
+
+// issue #12 diagnostics: a node that cannot build says why, and is not
+// left believing it is built -- nor re-asking the server every frame
+test("a build that throws is recorded, not latched, and not retried per frame", async () => {
+    const { p, asked } = await harness();
+    const node = new Node({});
+    const addWidget = node.addWidget.bind(node);
+    let fail = true;
+    node.addWidget = (...args) => {
+        if (fail) throw new TypeError("another pack broke addWidget");
+        return addWidget(...args);
+    };
+    await p.rebuild(node, true);
+    assert.equal(node.__obvpmBuilt, null, "not left marked as built");
+    assert.match(node.__obvpmBuildError, /another pack broke addWidget/);
+    assert.ok(node.__obvpmTrace.some((e) => e.e === "build-threw" && /another pack/.test(e.d)));
+    // the draw loop calls rebuild(node) every frame: no request for a
+    // schema whose build just failed
+    const before = asked.schema;
+    for (let frame = 0; frame < 5; frame++) await p.rebuild(node);
+    assert.equal(asked.schema, before, "no request per frame");
+    // a forced retry (the spaced ones are forced) builds once it can
+    fail = false;
+    await p.rebuild(node, true);
+    await tick();
+    assert.equal(node.__obvpmBuildError, null);
+    assert.ok(field(node, "steps"), "the fields are there");
+    assert.ok(node.__obvpmTrace.some((e) => e.e === "built"));
+});
+
+test("a node its graph does not hold is recorded with why, and not re-asked per frame", async () => {
+    const { p, asked } = await harness();
+    const node = new Node({});
+    const other = { type: "KSampler" };
+    node.graph = { getNodeById: () => other, _nodes: [node, other] };
+    other.id = node.id;
+    await p.rebuild(node, true);
+    const ev = node.__obvpmTrace.find((e) => e.e === "not-live");
+    assert.ok(ev, "traced");
+    assert.match(ev.d, /ANOTHER node under id 1 \(KSampler\).*this id in the graph: 2/);
+    const before = asked.schema;
+    for (let frame = 0; frame < 5; frame++) await p.rebuild(node);
+    assert.equal(asked.schema, before, "no request per frame");
+    assert.equal(field(node, "steps"), undefined, "no fields built on it");
 });

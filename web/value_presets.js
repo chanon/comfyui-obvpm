@@ -8,6 +8,8 @@ import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL,
          textBox, pushButton, openOverlay, askText, askConfirm, notice,
          dropWidgetSockets, themePalette, valueTooltip,
          NODE_BUTTON, NODE_BUTTON_HOVER } from "./obvpm_ui.js";
+import { trace, listenForPageErrors, loadStarted, loadFinished,
+         reportText, copyText } from "./value_presets_diag.js";
 
 /**
  * Value Presets: a control per schema field, and named sets of them.
@@ -255,6 +257,10 @@ function applyVisibility(node) {
  * itself from the node instead (paintButtonRow).
  */
 function clearBuilt(node) {
+    // The problem line is a DOM widget: dropped from the list alone, its
+    // element would stay on screen with nothing updating it.
+    const problem = widget(node, PROBLEM);
+    try { problem?.onRemove?.(); } catch (err) { /* the list still drops it */ }
     node.widgets = (node.widgets ?? []).filter(
         (w) => !w[MARK] || w.name === ROW_NAME);
 }
@@ -342,13 +348,35 @@ function selected(node) {
 app.registerExtension({
     name: "obvpm.value_presets",
 
+    // Diagnostics (value_presets_diag.js): page errors from here on, and
+    // console.error only while a workflow loads -- what other packs throw
+    // from their load hooks, which the frontend catches and logs.
+    setup() {
+        listenForPageErrors();
+        if (typeof window !== "undefined") {
+            window.obvpmPresetsDiag = (id) => {
+                const nodes = (app.graph?._nodes ?? []).filter((n) => n.type === NODE);
+                const node = id == null ? nodes[0] : nodes.find((n) => String(n.id) === String(id));
+                return node ? diagnostics(node) : "No Value Presets node" + (id == null ? "" : " #" + id);
+            };
+        }
+    },
+    beforeConfigureGraph() {
+        loadStarted();
+    },
+    afterConfigureGraph() {
+        loadFinished();
+    },
+
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE) return;
 
         const created = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
+            trace(this, "created", "id " + this.id);
             const r = created?.apply(this, arguments);
             setup(this);
+            watch(this);
             return r;
         };
 
@@ -356,9 +384,27 @@ app.registerExtension({
         // controls have to be rebuilt once the real schema and values
         // are in place -- otherwise every loaded node shows the defaults.
         const configure = nodeType.prototype.onConfigure;
-        nodeType.prototype.onConfigure = function () {
+        nodeType.prototype.onConfigure = function (info) {
+            const saved = info?.widgets_values;
+            // what the workflow carried, to tell "the load lost the
+            // schema" from "the workflow never had one"
+            this.__obvpmLoadedSchemaLen = String(saved?.[0] ?? "").length;
+            trace(this, "configured", "id " + this.id + ", workflow schema "
+                  + this.__obvpmLoadedSchemaLen + " chars, preset "
+                  + JSON.stringify(saved?.[1] ?? null) + ", widgets_values "
+                  + (Array.isArray(saved) ? saved.length : "none"));
             const r = configure?.apply(this, arguments);
             void rebuild(this);
+            watch(this);
+            return r;
+        };
+
+        const menu = nodeType.prototype.getExtraMenuOptions;
+        nodeType.prototype.getExtraMenuOptions = function (_, options) {
+            const r = menu?.apply(this, arguments);
+            const self = this;
+            options?.push({ content: "Copy Value Presets diagnostics",
+                            callback: () => void copyDiagnostics(self) });
             return r;
         };
 
@@ -449,6 +495,13 @@ function asDropdown(node, name, valuesFn) {
 async function rebuild(node, force) {
     const schema = String(widget(node, SCHEMA)?.value ?? "");
     if (!force && node.__obvpmBuilt === schema) return;
+    // A schema whose build threw is not retried from the draw loop (one
+    // server request per frame); the spaced retries are forced, and an
+    // edit to the schema is a new text and so a new attempt.
+    if (!force && node.__obvpmFailedSchema === schema) return;
+    // Likewise a node that is drawn but not in its graph (see isLive):
+    // the watchdog retries it, the draw loop does not.
+    if (!force && node.__obvpmNotLiveSchema === schema) return;
     if (node.__obvpmBuilding) {
         // Not dropped: remembered, and re-run when the flight lands.
         // The call this guard used to swallow was onConfigure's -- the
@@ -460,12 +513,19 @@ async function rebuild(node, force) {
         return;
     }
     node.__obvpmBuilding = true;
+    node.__obvpmBuildingSince = Date.now();
+    trace(node, "build", (force ? "forced" : "schema changed") + ", "
+          + schema.length + " chars");
+    const asked = Date.now();
     let answer;
     try {
         answer = await describe(schema);
     } finally {
         node.__obvpmBuilding = false;
     }
+    trace(node, "schema-answer", (Date.now() - asked) + " ms, "
+          + (answer?.fields?.length ?? 0) + " fields"
+          + (answer?.error ? ", error: " + answer.error : ""));
     // Deleted while we were asking? `node.graph` is not the test: a
     // graph clear (a workflow reloaded over itself, undo) fires the
     // node's removal but never unsets that reference, and the same
@@ -475,7 +535,16 @@ async function rebuild(node, force) {
     // removed, because a removed node is not removed twice. That was
     // the duplicate row under a reloaded workflow (2026-09-10). The
     // graph has to still hold THIS node object.
-    if (!isLive(node)) return;
+    if (!isLive(node)) {
+        // Not silent: a node that IS on the canvas but fails this (its
+        // id answers with another node, or its graph is not the one it
+        // is drawn in) would otherwise stay blank with no word why. The
+        // watchdog retries it and says so on the node.
+        trace(node, "not-live", liveness(node));
+        node.__obvpmNotLiveSchema = schema;
+        return;
+    }
+    node.__obvpmNotLiveSchema = null;
     const rerun = node.__obvpmRerun ?? 0;
     node.__obvpmRerun = 0;
     // An answer for text the widget no longer holds is stale: building
@@ -483,10 +552,44 @@ async function rebuild(node, force) {
     // keyed to the real schema. Discard and ask again -- BEFORE
     // __obvpmBuilt is touched, so the retry does not think it is done.
     if (String(widget(node, SCHEMA)?.value ?? "") !== schema || rerun) {
+        trace(node, "stale", rerun ? "a rebuild was asked for meanwhile"
+                                   : "the schema changed while asking");
         return rebuild(node, force || rerun === 2);
     }
+    // Set before building so the draw loop does not start a second
+    // build meanwhile -- and cleared again if the build throws, so a
+    // node is never left blank for good believing it is built.
     node.__obvpmBuilt = schema;
+    try {
+        buildFields(node, answer);
+        node.__obvpmBuildError = null;
+        node.__obvpmFailedSchema = null;
+        node.__obvpmFailures = 0;
+        node.__obvpmProblem = null;
+        node.__obvpmWatchRetried = false;
+        trace(node, "built", Object.keys(node.__obvpmFieldMap ?? {}).length
+              + " fields, " + (node.widgets?.length ?? 0) + " widgets");
+    } catch (err) {
+        node.__obvpmBuilt = null;
+        node.__obvpmFailedSchema = schema;
+        node.__obvpmBuildError = String(err?.message ?? err);
+        node.__obvpmFailures = (node.__obvpmFailures ?? 0) + 1;
+        trace(node, "build-threw", String(err?.stack ?? err));
+        // A retry or two, spaced out: a load that is still settling can
+        // make one build fail and the next one work. Not more: the draw
+        // loop would otherwise ask the server every frame for a build
+        // that fails the same way every time.
+        if (node.__obvpmFailures <= 2) {
+            setTimeout(() => void rebuild(node, true), 2000 * node.__obvpmFailures)
+                ?.unref?.();                // node's test runner: never hold it open
+        } else {
+            showProblem(node, "could not build its fields: " + node.__obvpmBuildError);
+        }
+    }
+}
 
+/** The fields, their values and the row, from the server's answer. */
+function buildFields(node, answer) {
     clearBuilt(node);
     node.__obvpmSchemaError = answer.error ?? null;
     const fields = answer.fields ?? [];
@@ -1341,6 +1444,171 @@ function isLive(node) {
     if (!g) return false;
     if (typeof g.getNodeById !== "function") return true;   // test doubles
     return g.getNodeById(node.id) === node;
+}
+
+/** Why isLive answered as it did, for the trace and the report. */
+function liveness(node) {
+    const g = node.graph;
+    if (!g) return "the node has no graph (removed)";
+    const held = typeof g.getNodeById === "function" ? g.getNodeById(node.id) : node;
+    if (held === node) return "live";
+    const same = (g._nodes ?? []).filter((n) => String(n.id) === String(node.id)).length;
+    return held
+        ? "its graph holds ANOTHER node under id " + node.id + " (" + held.type
+          + "); nodes with this id in the graph: " + same
+        : "its graph has no node with id " + node.id + " (removed, or the id changed)"
+          + "; graph is " + (g === app.graph ? "the open graph" : "not the open graph");
+}
+
+// ------------------------------------------------------------------ watchdog
+
+// How long after a create/load/build a node has to be built by. Long,
+// on purpose: a big workflow on a busy server takes seconds to settle,
+// and a false alarm on a node that was about to finish is worse than a
+// late one.
+const WATCH_MS = 12000;
+
+/**
+ * One timer per node, re-armed on every create/configure: when it fires
+ * it checks the node is built, retries once if it is not, and says what
+ * is wrong on the node itself instead of leaving it blank.
+ */
+function watch(node) {
+    clearTimeout(node.__obvpmWatch);
+    node.__obvpmWatch = setTimeout(() => void checkBuilt(node), WATCH_MS);
+    node.__obvpmWatch?.unref?.();       // node's test runner: never hold it open
+}
+
+async function checkBuilt(node) {
+    if (!node.graph) return;                           // removed: nothing to say
+    const schema = String(widget(node, SCHEMA)?.value ?? "");
+    const built = node.__obvpmBuilt === schema && !!node.__obvpmRow;
+    if (built) return;
+    let why;
+    if (node.__obvpmBuilding) {
+        why = "still waiting for the schema from the server after "
+            + Math.round((Date.now() - (node.__obvpmBuildingSince ?? Date.now())) / 1000) + " s";
+    } else if (!isLive(node)) {
+        why = liveness(node);
+    } else if (node.__obvpmBuildError) {
+        why = "could not build its fields: " + node.__obvpmBuildError;
+    } else if (!schema && node.__obvpmLoadedSchemaLen > 0) {
+        why = "the workflow had a schema (" + node.__obvpmLoadedSchemaLen
+            + " chars) but the node's schema is empty now";
+    } else {
+        why = "its fields were never built";
+    }
+    trace(node, "watchdog", why);
+    // one quiet retry first: most of these clear once a load settles
+    if (!node.__obvpmWatchRetried) {
+        node.__obvpmWatchRetried = true;
+        await rebuild(node, true);
+        if (node.__obvpmBuilt === String(widget(node, SCHEMA)?.value ?? "") && node.__obvpmRow) {
+            trace(node, "watchdog", "the retry built it");
+            return;
+        }
+    }
+    showProblem(node, why);
+}
+
+/**
+ * Say what is wrong ON the node: a read-only line where the fields would
+ * be. A built node drops it (clearBuilt removes every widget this file
+ * made), so it goes away by itself once things work.
+ */
+function showProblem(node, why) {
+    node.__obvpmProblem = why;
+    const text = "⚠ " + why + " -- right-click the node, Copy Value Presets diagnostics";
+    // console too, once per problem: the one place a user may already be
+    // looking, and it names the node
+    if (node.__obvpmProblemLogged !== why) {
+        node.__obvpmProblemLogged = why;
+        console.warn("[obvpm] Value Presets #" + node.id + ": " + why
+                     + " (right-click the node > Copy Value Presets diagnostics)");
+    }
+    try {
+        let w = widget(node, PROBLEM);
+        if (!w) {
+            // A DOM line, not a text widget: a disabled text widget
+            // shows its label and drops a value this long, which leaves
+            // "⚠ problem" and none of the problem. Fixed height, two
+            // lines at most; the whole text is the tooltip.
+            const line = document.createElement("div");
+            Object.assign(line.style, {
+                color: "#ff8a8a", font: "12px/16px sans-serif", padding: "0 4px",
+                overflow: "hidden", display: "-webkit-box", WebkitLineClamp: "2",
+                WebkitBoxOrient: "vertical", boxSizing: "border-box",
+            });
+            w = node.addDOMWidget(PROBLEM, "div", line, { hideOnZoom: false, margin: 6 });
+            w.serialize = false;
+            w.options.serialize = false;
+            w.computeLayoutSize = () => ({ minHeight: 44, maxHeight: 44, minWidth: 0 });
+            Object.defineProperty(w, "width", {
+                configurable: true, get: () => undefined, set: () => {},
+            });
+            w[MARK] = true;
+            w.__obvpmLine = line;
+            dropWidgetSockets(node, [PROBLEM]);
+        }
+        w.__obvpmLine.textContent = text;             // text, never markup
+        w.__obvpmLine.title = text;
+        node.setSize?.([node.size[0], Math.max(node.size[1], node.computeSize?.()[1] ?? 0)]);
+        node.setDirtyCanvas?.(true, true);
+    } catch (err) {
+        // the DOM widget is what failed: the plain one, label only
+        trace(node, "problem-line-failed", String(err?.message ?? err));
+        try {
+            const w = node.addWidget("string", "⚠ " + why, "", () => {});
+            w.serialize = false;
+            w[MARK] = true;
+            w.disabled = true;
+        } catch (e) { /* the console line above still says it */ }
+    }
+}
+const PROBLEM = "obvpm_problem";
+
+// ------------------------------------------------------------------ report
+
+function diagnostics(node) {
+    const g = node.graph;
+    const schema = String(widget(node, SCHEMA)?.value ?? "");
+    const ids = (g?._nodes ?? []).filter((n) => String(n.id) === String(node.id)).length;
+    const own = Object.keys(node).filter((k) => typeof node[k] === "function");
+    return reportText(node, {
+        "frontend": String(window.__COMFYUI_FRONTEND_VERSION__ ?? "?"),
+        "renderer": typeof LiteGraph !== "undefined" && LiteGraph.vueNodesMode ? "Nodes 2.0" : "classic",
+        "node": "#" + node.id + " " + node.type + (node.title && node.title !== node.type ? " '" + node.title + "'" : ""),
+        "graph": g ? (g === app.graph ? "the open graph" : "another graph (a subgraph?)") : "none",
+        "live": liveness(node),
+        "nodes with this id in its graph": ids,
+        "mode / flags": node.mode + " / " + JSON.stringify(node.flags ?? {}),
+        "size": JSON.stringify(Array.from(node.size ?? [], (v) => Math.round(v))),
+        "schema": schema.length + " chars (workflow carried "
+            + (node.__obvpmLoadedSchemaLen ?? "?") + "), first line: " + schema.split("\n")[0],
+        "built from the current schema": node.__obvpmBuilt === schema,
+        "building": !!node.__obvpmBuilding,
+        "button row": !!node.__obvpmRow,
+        "fields": Object.keys(node.__obvpmFieldMap ?? {}).length,
+        "schema error": node.__obvpmSchemaError ?? "none",
+        "build error": node.__obvpmBuildError ?? "none",
+        "problem shown": node.__obvpmProblem ?? "none",
+        "widgets": (node.widgets ?? []).map((w) => w.name + " [" + w.type
+            + (w.hidden || w.options?.hidden ? ", hidden" : "") + "]"),
+        "methods set on this node by extensions": own.join(", ") || "none",
+        "extensions": (app.extensions ?? []).length + ": "
+            + (app.extensions ?? []).map((e) => e.name).join(", "),
+    });
+}
+
+async function copyDiagnostics(node) {
+    const text = diagnostics(node);
+    const ok = await copyText(text);
+    app.extensionManager?.toast?.add?.(ok
+        ? { severity: "success", summary: "Diagnostics copied",
+            detail: "Paste them into the bug report.", life: 4000 }
+        : { severity: "warn", summary: "Could not copy",
+            detail: "The browser refused clipboard access. In the console: obvpmPresetsDiag(" + node.id + ")",
+            life: 6000 });
 }
 
 function addButtonRow(node) {

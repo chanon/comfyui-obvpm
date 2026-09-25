@@ -12,6 +12,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 - Unbundle: the cdialog now shows, for each field, whether the bundle on the wire (or the constant) has it: green yes, red no (that output gives None), grey when it can't be traced, with the reason.
 - Bundle / Unbundle: the collapse (−) and settings (⚙) buttons are now drawn as icons instead of text characters, so they are the same size on every system (on some installs the ⚙ came out tiny). The Compatibility Check's settings button got the same icon.
 - Bundle / Unbundle: fixed the node pack badge showing above the nodes again on ComfyUI frontend 1.53 in the classic (non Nodes 2.0) view.
+- Value Presets: if the node can't build its fields, it now says why on the node instead of staying blank, and retries a failed build. Right-click the node → **Copy Value Presets diagnostics** copies a report for bug reports (what happened to the node, and errors other packs logged while the workflow loaded).
 
 ### 0.2.6 (2026-09-25)
 
