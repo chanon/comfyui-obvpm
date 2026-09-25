@@ -1,6 +1,15 @@
-name: Release on version tag
+name: Release on version bump or tag
 on:
+  # a push to main that changes pyproject.toml -- the same push that
+  # publishes to the Comfy registry -- releases the version it names,
+  # creating its v<version> tag, so no tag has to be pushed by hand
   push:
+    branches:
+      - main
+    paths:
+      - "pyproject.toml"
+    # path filters are not applied to tag pushes: a pushed v* tag still
+    # releases on its own
     tags:
       - "v*"
   workflow_dispatch:
@@ -26,16 +35,77 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Pick the tag
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            VERSION=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' pyproject.toml | head -n 1)
+            if [ -z "$VERSION" ]; then
+              echo "::error::no version line in pyproject.toml"
+              exit 1
+            fi
+            TAG="v$VERSION"
+          fi
+          case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # pyproject.toml also changes without a version bump (a new
+          # description, a dependency): its version is released already
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::notice::$TAG is released already; nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # a version bump pushed without its tag: tag the pushed commit
+          # here so the notes can be cut from it, and on GitHub when the
+          # release is created (--target below)
+          if git rev-parse --verify --quiet "refs/tags/$TAG" > /dev/null; then
+            echo "new_tag=false" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$GITHUB_REF_TYPE" != "branch" ] || [ -n "$INPUT_TAG" ]; then
+              echo "::error::tag $TAG does not exist"
+              exit 1
+            fi
+            git tag "$TAG" "$GITHUB_SHA"
+            echo "new_tag=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build release notes
         id: notes
+        if: steps.pick.outputs.skip != 'true'
         env:
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ steps.pick.outputs.tag }}
           ALLOW_MISSING: ${{ inputs.allow_missing_notes && '--allow-missing' || '' }}
         run: python3 .github/release_notes.py "$TAG" $ALLOW_MISSING > notes.md
 
       - name: Create release
+        if: steps.pick.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.notes.outputs.tag }}
           LATEST: ${{ steps.notes.outputs.latest }}
-        run: gh release create "$TAG" --title "${TAG#v}" --notes-file notes.md --verify-tag --latest="$LATEST"
+          NEW_TAG: ${{ steps.pick.outputs.new_tag }}
+        # a push of main together with its tag starts two runs; whichever
+        # is second finds the release made and stops there, successfully
+        run: |
+          if [ "$NEW_TAG" = "true" ]; then
+            WHERE="--target $GITHUB_SHA"
+          else
+            WHERE="--verify-tag"
+          fi
+          if ! gh release create "$TAG" --title "${TAG#v}" --notes-file notes.md $WHERE --latest="$LATEST"; then
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              echo "::notice::$TAG was released by another run"
+            else
+              exit 1
+            fi
+          fi
