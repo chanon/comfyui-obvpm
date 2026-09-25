@@ -4,9 +4,9 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 ## Updates
 
-**Also check out my new Timeline node:**  https://github.com/obvpm/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
+**Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
-### Latest HEAD
+### 0.2.6 (2026-09-25)
 
 - New node **Compatibility Check**: It allows workflow creators to configure the minimum ComfyUI version required, and also what custom node packs are required for the workflow to work. Then when a user opens the workflow, they can see from the node if they are missing any node packs or if they are on a too old version of anything. Created to reduce support load from my [timeline workflow](https://github.com/obvpm/comfyui-obvpm-timeline). Also has a "copy report" button that lists the complete installation details for bug reports.
 
