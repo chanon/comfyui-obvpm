@@ -49,10 +49,14 @@ export function syncFold(node) {
         // `getTitle()` (min(size, text + 60)), and on a node as narrow
         // as these the display name would run past the end. Empty, the
         // bar is a plain 60-wide pill; `title` itself is untouched, so
-        // nothing changes in the saved workflow.
+        // nothing changes in the saved workflow. A Bundle / Unbundle
+        // with its set / get option on is the exception
+        // (`__obvpmFoldTitle`, asked on every draw so the option can flip
+        // while folded): its title ("Set name") IS the node then, as on
+        // a collapsed KJNodes Set/Get, and it is sized so that fits.
         Object.defineProperty(node, "getTitle", {
             configurable: true, enumerable: false, writable: true,
-            value: () => "",
+            value: () => (node.__obvpmFoldTitle ? String(node.title ?? "") : ""),
         });
         return true;
     }

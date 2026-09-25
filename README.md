@@ -6,6 +6,11 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Bundle / Unbundle: new **Set as a constant** / **Get from a constant** option in the ⚙ settings. Turned on, the node sets or gets a bundle by a constant name instead of a wire, like KJNodes Set/Get, and works together with them: a KJNodes Get can read a Bundle's set, and an Unbundle's get can read a KJNodes Set that carries a bundle. Collapsed, the node then shows "Set name" / "Get name". Off by default, so existing workflows are unchanged. See [Set / get by name](#set--get-by-name).
+- Unbundle: the cdialog now shows, for each field, whether the bundle on the wire (or the constant) has it: green yes, red no (that output gives None), grey when it can't be traced, with the reason.
+
 ### 0.2.6 (2026-09-25)
 
 - New node **Compatibility Check**: It allows workflow creators to configure the minimum ComfyUI version required, and also what custom node packs are required for the workflow to work. Then when a user opens the workflow, they can see from the node if they are missing any node packs or if they are on a too old version of anything. Created to reduce support load from my [timeline workflow](https://github.com/obvpm/comfyui-obvpm-timeline). Also has a "copy report" button that lists the complete installation details for bug reports.
@@ -278,7 +283,24 @@ Wiring something that isn't a bundle into `in` is refused.
 
 Bundles nest: a Bundle's output can itself be a field of another Bundle. Unbundling the outer one puts the inner bundle on the output named after that field, and an Unbundle wired there shows the inner Bundle's fields — the trace follows the wire back through the outer Unbundle to whichever Bundle packed it, at any depth.
 
-The config dialog reorders the outputs and hides the ones a branch does not need; hiding is also how you take a single field, or choose which of a larger bundle to expose. A field with connections cannot be hidden — unplug it first. Once a layout is set it also *pins* the outputs: fields added upstream append at the end instead of shifting the existing pins, and a field that disappears upstream while wired keeps its pin (it outputs `None`, with a log line saying so) rather than silently re-meaning everything below it.
+The config dialog marks each field with whether the bundle on the wire (or the constant) actually has it: green if it does, red if it does not (that output gives `None`), grey when the source can't be traced, with the reason. It reorders the outputs and hides the ones a branch does not need; hiding is also how you take a single field, or choose which of a larger bundle to expose. A field with connections cannot be hidden — unplug it first. Once a layout is set it also *pins* the outputs: fields added upstream append at the end instead of shifting the existing pins, and a field that disappears upstream while wired keeps its pin (it outputs `None`, with a log line saying so) rather than silently re-meaning everything below it.
+
+### Set / get by name
+
+Bundle and Unbundle can be joined by a **constant name** instead of a wire, the way KJNodes Set/Get nodes hide a connection. Turn it on in the node's ⚙ settings: **Set as a constant** on a Bundle, **Get from a constant** on an Unbundle. It is applied with OK, like the rest of the dialog.
+
+- **Bundle, set on:** a `set` field appears for the name, and the node still packs and outputs its bundle as usual. The title follows the name: `Set name`. Names are unique: taking one that is already used gets a `_0`, `_1`… suffix, as on KJNodes. Renaming it renames every getter that used the old name.
+- **Unbundle, get on:** its `in` socket goes away and a `get` dropdown appears. Pick a name, and the outputs become that bundle's fields, exactly as when wired, config dialog included. The title follows the name: `Get name`. Right-click → Go to setter.
+- **Turning the option off** puts the node back as it was: the field hides, an Unbundle's `in` socket returns, and the old title comes back.
+
+Collapsed, a node with set or get on shows its title, like a collapsed KJNodes Set/Get.
+
+**Compatible with KJNodes Set/Get.** The names are shared in both directions:
+
+- A KJNodes **Get** lists the names Bundles set, and outputs that bundle.
+- An Unbundle's **get** lists KJNodes **Set** nodes that carry a bundle, and unbundles what feeds them.
+
+Scope follows KJNodes: a name set in a graph is visible there and in every subgraph inside it. If nothing is set under the chosen name, or the setter is muted or bypassed, the run stops with an error naming the constant.
 
 ### Collapsing Bundle/Unbundle
 

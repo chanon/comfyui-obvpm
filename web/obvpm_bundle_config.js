@@ -1,5 +1,6 @@
 // The bundle config dialogs: reorder/hide for Unbundle's outputs,
-// rename/reorder for Bundle's inputs.
+// rename/reorder for Bundle's inputs -- and, on both, the set / get
+// option that joins a Bundle and an Unbundle by name.
 //
 // THE DIALOG IS THE ONLY PLACE LINKS MOVE. Sync never re-means a
 // connected pin: it hands `syncSockets` a label list whose linked names
@@ -17,6 +18,8 @@ import {
 } from "./obvpm_dynamic.js";
 import { el, TEXT, TITLE, DIM, pushButton, textBox,
          openOverlay } from "./obvpm_ui.js";
+import { constantOf, constantOn, findConstantSetter,
+         setMode } from "./obvpm_constants.js";
 
 // Mirrors MAX_FIELDS in bundle.py: the server's declared out_N pool.
 const MAX_FIELDS = 16;
@@ -189,6 +192,42 @@ function moveButtons(rows, index, redraw) {
     ];
 }
 
+/**
+ * The set / get option: a Bundle that sets a constant, an Unbundle that
+ * gets one, joined by name like KJNodes Set/Get (obvpm_constants.js).
+ * Applied on OK with everything else; `apply()` says whether it changed.
+ */
+function constantOption(node, kind) {
+    const row = el("label", {
+        display: "flex", gap: "8px", alignItems: "baseline",
+        cursor: "pointer", padding: "4px 0",
+    });
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = constantOn(node);
+    box.dataset.obvpm = "constant-option";
+    const text = el("span", { font: TEXT },
+                    kind === "set" ? "Set as a constant" : "Get from a constant");
+    const hint = el("span", { color: DIM, font: "12px sans-serif" },
+        kind === "set"
+            ? "Unbundles (and KJNodes Gets) can take this bundle by name. "
+              + "The node shows a 'set' field for the name."
+            : "Take the bundle by name from a Bundle's set (or a KJNodes "
+              + "Set) instead of the 'in' wire, which is disconnected. "
+              + "The node shows a 'get' field for the name.");
+    const words = el("div", { display: "flex", flexDirection: "column" });
+    words.append(text, hint);
+    row.append(box, words);
+    return {
+        element: row,
+        apply() {
+            if (box.checked === constantOn(node)) return false;
+            setMode(node, box.checked);
+            return true;
+        },
+    };
+}
+
 function footerOf(panel, close, onOk) {
     const error = el("div", {
         color: "#e88", whiteSpace: "pre-wrap", display: "none",
@@ -212,6 +251,76 @@ function footerOf(panel, close, onOk) {
     panel.append(error, footer);
 }
 
+// Whether the source has each field: a green dot yes, a red cross no
+// (that output gives None), a faint ring when the source cannot be
+// traced at all.
+const HAS = { yes: "#5fb865", no: "#e05555", unknown: "#8a8a8a" };
+
+/** The mark for one state -- the same in the rows and the legend. */
+function hasMark(state) {
+    const box = {
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: "10px", height: "10px", flex: "none",
+    };
+    if (state === "no") {
+        return el("span", {
+            ...box, color: HAS.no, font: "bold 11px/10px sans-serif",
+        }, "✕");
+    }
+    const dot = el("span", { ...box });
+    dot.append(el("span", state === "yes"
+        ? { width: "8px", height: "8px", borderRadius: "50%",
+            background: HAS.yes }
+        : { width: "6px", height: "6px", borderRadius: "50%",
+            border: `1px solid ${HAS.unknown}`, opacity: "0.6" }));
+    return dot;
+}
+
+/** Why the fields of an Unbundle's source cannot be read, in words. */
+function untraceableReason(node) {
+    if (constantOn(node)) {
+        const name = constantOf(node);
+        if (!name) return "No constant is chosen in the get field.";
+        if (!findConstantSetter(node.graph, name)) {
+            return `Nothing is set as '${name}'.`;
+        }
+        return `The fields of '${name}' cannot be traced from here.`;
+    }
+    const input = (node.inputs ?? []).find((s) => s.name === "in");
+    if (input?.link == null) return "Nothing is connected to 'in'.";
+    return "The fields cannot be traced from here -- for example a "
+        + "switch whose branches pack different fields.";
+}
+
+/** A dot saying whether the source bundle has `name`. */
+function hasIndicator(traced, name, why) {
+    const state = !traced ? "unknown" : traced.includes(name) ? "yes" : "no";
+    const dot = hasMark(state);
+    dot.dataset.obvpmHas = state;
+    dot.title = state === "yes" ? "In the bundle."
+        : state === "no"
+            ? "Not in the bundle: this output gives None."
+            : "Can't tell. " + why;
+    return dot;
+}
+
+function hasLegend() {
+    const row = el("div", {
+        display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap",
+        color: DIM, font: "12px sans-serif",
+    });
+    for (const [state, text] of [["yes", "in the bundle"],
+                                 ["no", "not in the bundle (gives None)"],
+                                 ["unknown", "can't tell"]]) {
+        const item = el("span", {
+            display: "inline-flex", gap: "5px", alignItems: "center",
+        });
+        item.append(hasMark(state), document.createTextNode(text));
+        row.append(item);
+    }
+    return row;
+}
+
 /** Reorder and hide the Unbundle's outputs. */
 export function openUnbundleConfig(node) {
     const layout = layoutOf(node) ?? {};
@@ -221,15 +330,23 @@ export function openUnbundleConfig(node) {
     // arrange. Effective order first so the dialog opens showing what
     // the node shows, with the hidden names after it.
     const all = arrange(traced, { ...layout, hidden: [] }, linked);
+    const option = constantOption(node, "get");
     if (!all.length) {
         const { overlay, panel, close } = openOverlay("min(420px, 90vw)");
         panel.append(
             el("div", { font: TITLE }, "Unbundle outputs"),
+            option.element,
             el("div", { color: DIM },
-               "Connect a bundle first -- there are no fields to "
-               + "arrange yet."),
+               constantOn(node)
+                   ? "Choose a constant in the node's get field -- there "
+                     + "are no fields to arrange yet."
+                   : "Connect a bundle first -- there are no fields to "
+                     + "arrange yet."),
         );
-        footerOf(panel, close, () => null);
+        footerOf(panel, close, () => {
+            option.apply();
+            return null;
+        });
         document.body.appendChild(overlay);
         return;
     }
@@ -238,9 +355,20 @@ export function openUnbundleConfig(node) {
 
     const { overlay, panel, close } = openOverlay("min(480px, 90vw)");
     panel.append(el("div", { font: TITLE }, "Unbundle outputs"));
+    panel.append(option.element);
     panel.append(el("div", { color: DIM, font: "12px sans-serif" },
         "Reordering moves the wires with their fields. Hidden fields "
         + "have no pin; a field with connections cannot be hidden."));
+    // Does the source -- the wire, or the constant -- still have each
+    // field? Asked of the trace, not of the node's outputs: an output
+    // can outlive its field (a wired one is kept, and gives None).
+    const why = traced ? "" : untraceableReason(node);
+    panel.append(hasLegend());
+    if (!traced) {
+        panel.append(el("div", { color: DIM, font: "12px sans-serif",
+                                 opacity: "0.8" },
+                        "Showing the last known fields. " + why));
+    }
     const list = el("div", {
         display: "flex", flexDirection: "column", gap: "2px",
         overflowY: "auto", padding: "4px 2px",
@@ -273,7 +401,7 @@ export function openUnbundleConfig(node) {
                 color: row.hidden ? DIM : undefined,
                 textDecoration: row.hidden ? "line-through" : "none",
             }, row.name);
-            shell.append(check, label);
+            shell.append(check, hasIndicator(traced, row.name, why), label);
             if (wired) shell.append(el("span", { color: DIM }, "wired"));
             list.appendChild(shell);
         });
@@ -281,6 +409,10 @@ export function openUnbundleConfig(node) {
     draw();
 
     footerOf(panel, close, () => {
+        // Switching where the bundle comes from changes the fields; a
+        // layout arranged for the old source means nothing for the new
+        // one, so only the switch is applied.
+        if (option.apply()) return null;
         const linkedNow = linkedOutputNames(node);
         const bad = rows.filter((r) => r.hidden && linkedNow.has(r.name));
         if (bad.length) {
@@ -305,15 +437,20 @@ export function openBundleConfig(node) {
     const occupied = (node.inputs ?? [])
         .map((slot, index) => ({ slot, index }))
         .filter((x) => re.test(x.slot.name) && x.slot.link != null);
+    const option = constantOption(node, "set");
     if (!occupied.length) {
         const { overlay, panel, close } = openOverlay("min(420px, 90vw)");
         panel.append(
             el("div", { font: TITLE }, "Bundle fields"),
+            option.element,
             el("div", { color: DIM },
                "Connect something first -- there are no fields to "
                + "rename yet."),
         );
-        footerOf(panel, close, () => null);
+        footerOf(panel, close, () => {
+            option.apply();
+            return null;
+        });
         document.body.appendChild(overlay);
         return;
     }
@@ -332,6 +469,7 @@ export function openBundleConfig(node) {
 
     const { overlay, panel, close } = openOverlay("min(560px, 92vw)");
     panel.append(el("div", { font: TITLE }, "Bundle fields"));
+    panel.append(option.element);
     panel.append(el("div", { color: DIM, font: "12px sans-serif" },
         "Names key the bundle's fields (letters, digits, underscores). "
         + "Reordering moves the wires with their fields."));
@@ -398,6 +536,7 @@ export function openBundleConfig(node) {
             }
         });
         saveLayout(node, { ...layoutOf(node), renames });
+        option.apply();
         node.graph?.setDirtyCanvas(true, true);
         notifyVue(node);
         resyncGraph(node);

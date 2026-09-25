@@ -9,6 +9,9 @@ import {
 } from "./obvpm_bundle_config.js";
 import { el } from "./obvpm_ui.js";
 import { foldButton, installFold, isFolded, syncFold } from "./obvpm_fold.js";
+import {
+    constantOf, isConstantSetter, isOurGetter, isOurSetter, isUnbundle,
+} from "./obvpm_constants.js";
 
 // User-defined dropdowns without a node per list.
 //
@@ -268,6 +271,13 @@ function countSlots(node, side, prefix) {
  */
 function bundleSourceFor(node, slotName, depth = 0) {
     if (depth >= 8) return null;
+    // An Unbundle with "get" on has no socket: its wire is the constant,
+    // and it continues at the setter carrying it.
+    if (isOurGetter(node) && slotName === "in"
+            && !(node.inputs ?? []).some((i) => i.name === "in" && i.link != null)) {
+        const setter = setterFor(node);
+        return setter ? setterSource(setter, depth) : null;
+    }
     const idx = (node.inputs ?? []).findIndex((i) => i.name === slotName);
     const link = idx >= 0
         ? linkById(node.graph, node.inputs[idx].link) : null;
@@ -291,11 +301,18 @@ function bundleSourceFor(node, slotName, depth = 0) {
     }
     if (origin.type === "GetNode") {
         const setter = setterFor(origin);
-        return setter
-            ? bundleSourceFor(setter, setter.inputs?.[0]?.name, depth + 1)
-            : null;
+        return setter ? setterSource(setter, depth) : null;
     }
     return { node: origin, slot: through.slot };
+}
+
+/**
+ * Where a setter's bundle comes from: a Bundle with "set" on packs it
+ * itself (its output 0); a KJNodes Set passes on whatever feeds it.
+ */
+function setterSource(setter, depth) {
+    if (isOurSetter(setter)) return { node: setter, slot: 0 };
+    return bundleSourceFor(setter, setter.inputs?.[0]?.name, depth + 1);
 }
 
 /**
@@ -314,7 +331,7 @@ function packerOf(node, slotName, depth = 0) {
     const src = bundleSourceFor(node, slotName, depth);
     if (!src || depth >= 8) return null;
     const { node: origin, slot } = src;
-    if (origin.type === "Unbundle (obvpm)") {
+    if (isUnbundle(origin)) {
         const out = origin.outputs?.[slot];
         const field = out ? (out.label || out.localized_name || out.name) : "";
         const outer = field ? packerOf(origin, "in", depth + 1) : null;
@@ -335,7 +352,7 @@ export function bundleNamesFor(node, slotName, depth = 0) {
     const origin = src.node;
     // A bundle taken out of another bundle: the names are the inner
     // Bundle's, found through the Unbundle (see packerOf).
-    if (origin.type === "Unbundle (obvpm)") {
+    if (isUnbundle(origin)) {
         return packerOf(node, slotName, depth)?.names ?? null;
     }
     // Read the Bundle's list the same way it does, so a wired-in list
@@ -445,13 +462,14 @@ function throughSubgraph(origin, slot) {
  * than picking one.
  */
 function setterFor(getNode) {
-    const key = String(getNode.widgets?.[0]?.value ?? "");
+    // Either family on either end: KJNodes' Set/Get and our Bundle "set"
+    // / Unbundle "get" share one namespace (obvpm_constants.js).
+    const key = constantOf(getNode);
     if (!key) return null;
     let g = getNode.graph;
     for (let depth = 0; g && depth < 8; depth++) {
         const hit = (g._nodes ?? g.nodes ?? []).find(
-            (n) => n.type === "SetNode"
-                   && String(n.widgets?.[0]?.value ?? "") === key);
+            (n) => isConstantSetter(n) && constantOf(n) === key);
         if (hit) return hit;
         g = instanceOf(g)?.graph ?? null;
     }
@@ -875,15 +893,27 @@ ${sel} .lg-node-widgets {
 // the widest one hangs 16px off the left edge -- which is where the
 // wires went (2026-09-23). No labels on a folded node, and the slots
 // pinned to their edge: every dot then sits on the header's edge.
-const FOLD_RULES = (sel) => `
+// A node that keeps its title when folded (a Bundle / Unbundle with its
+// set / get option on: "Set name", as on a collapsed KJNodes Set/Get)
+// keeps the title element; the rest applies to it all the same.
+const FOLD_RULES = (sel, titled = false) => `
 ${sel}[data-collapsed],
 ${sel}[data-collapsed] > [data-testid="node-inner-wrapper"] {
     min-width: 0 !important;
     width: max-content !important;
 }
-${sel}[data-collapsed] [data-testid="node-title"] {
-    display: none !important;
+${titled ? `${sel}[data-collapsed] .lg-node-header {
+    /* the wire dots sit on the header's edges: keep the title off them */
+    padding-left: 0.5rem !important;
+    padding-right: 1rem !important;
 }
+${sel}:not([data-collapsed]) .lg-node-widgets {
+    /* the name field: label as wide as it is, the value takes the rest
+       (the compact rule's two equal columns cut a name off halfway) */
+    grid-template-columns: min-content max-content minmax(0, 1fr) !important;
+}` : `${sel}[data-collapsed] [data-testid="node-title"] {
+    display: none !important;
+}`}
 ${sel}[data-collapsed] .lg-slot .truncate {
     display: none !important;
 }
@@ -925,7 +955,8 @@ function refreshCompactCss() {
         if (width != null) rules.push(COMPACT_RULES(`[data-node-id="${cssString(id)}"]`, width));
     }
     for (const id of FOLD_NODES) {
-        rules.push(FOLD_RULES(`[data-node-id="${cssString(id)}"]`));
+        rules.push(FOLD_RULES(`[data-node-id="${cssString(id)}"]`,
+                              FOLD_TITLED.has(id)));
     }
     const css = rules.join("\n");
     if (style.textContent !== css) style.textContent = css;
@@ -937,14 +968,20 @@ function refreshCompactCss() {
 // with a null width: known, but not narrowed while it is collapsed.
 const COMPACT_NODES = new Map();
 const FOLD_NODES = new Set();
+const FOLD_TITLED = new Set();
 
 function applyVueCompact(node, width) {
     if (typeof document === "undefined") return;
     if (node.id == null || node.id === -1) return;   // not in the graph yet
     const px = isFolded(node) ? null : Math.max(MIN_COMPACT_WIDTH, Math.ceil(width));
     const id = String(node.id);
-    const foldChanged = !!node.__obvpmFold && !FOLD_NODES.has(id);
+    let foldChanged = !!node.__obvpmFold && !FOLD_NODES.has(id);
     if (foldChanged) FOLD_NODES.add(id);
+    if (!!node.__obvpmFoldTitle !== FOLD_TITLED.has(id)) {
+        if (node.__obvpmFoldTitle) FOLD_TITLED.add(id);
+        else FOLD_TITLED.delete(id);
+        foldChanged = true;
+    }
     if (COMPACT_NODES.has(id) && COMPACT_NODES.get(id) === px && !foldChanged) return;
     COMPACT_NODES.set(id, px);
     refreshCompactCss();
@@ -1101,16 +1138,26 @@ function makeCompact(nodeType) {
             .filter((w) => !w.hidden && w.computeLayoutSize)
             .reduce((h, w) =>
                 h + (w.computeLayoutSize(this)?.minHeight ?? 0), 0);
+        // Visible canvas widgets -- the constant name, while a Bundle's
+        // set or an Unbundle's get is on -- are a row each below the
+        // sockets. Otherwise there are none: the rest are hidden.
+        const canvasHeight = (this.widgets ?? [])
+            .filter((w) => !w.hidden && !w.options?.hidden
+                           && !w.computeLayoutSize)
+            .reduce((h) => h + (lg.NODE_WIDGET_HEIGHT ?? 20) + 4, 0);
+        // A node that needs more room than its sockets -- for that
+        // widget, or for a title shown when folded -- says so.
+        const floor = this.__obvpmMinWidth?.() ?? 0;
         // Slots sit at (n + 0.7) * NODE_SLOT_HEIGHT, so the last one's
         // centre is already most of the way down its row: an exact
         // rows * height leaves it flush against the bottom edge with its
         // lower half outside the node. The padding is what gives the
         // bottom row somewhere to sit, and the top row room above it.
         return [
-            Math.max(width, 2 * slotHeight),
+            Math.max(width, 2 * slotHeight, floor),
             Math.max((this.constructor.slot_start_y || 0)
                      + rows * slotHeight + SLOT_PADDING, slotHeight + 6)
-                + domHeight,
+                + canvasHeight + domHeight,
         ];
     };
 }

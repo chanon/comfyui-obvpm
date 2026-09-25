@@ -14,6 +14,15 @@ BUNDLE = "OBVPM_BUNDLE"
 
 MAX_FIELDS = 16
 
+# The constant a Bundle sets / an Unbundle gets, switched on in the node's
+# ⚙ dialog. The link itself is made in the browser (see
+# web/obvpm_constants.js): the server only ever sees an ordinary wire.
+_CONSTANT_TIP = (
+    "The constant's name, shown when '%s' is on in the node's settings. "
+    "Shared with "
+    "KJNodes Set/Get: a KJ Get can read a bundle set by a Bundle, and an "
+    "Unbundle can get a KJ Set that carries a bundle.")
+
 
 class Bundle:
     CATEGORY = "obvpm/bundle"
@@ -47,6 +56,10 @@ class Bundle:
                 "tooltip": f"Value for name line {i}. May be left "
                            f"unconnected; it then unpacks as None.",
             })
+        # Declared LAST: widget values are saved by position, and a save
+        # from before it existed holds only `names`, which stays first.
+        optional["set"] = ("STRING", {
+            "default": "", "tooltip": _CONSTANT_TIP % "set"})
         return {
             "required": {
                 # Hidden in the UI and filled in from the connected wires
@@ -63,6 +76,9 @@ class Bundle:
         }
 
     def pack(self, names, **kwargs):
+        # The constant's name: nothing to do with it here (a builtin's
+        # name, so it is not a parameter).
+        kwargs.pop("set", None)
         fields = _lines(names)[:MAX_FIELDS]
         packed = {}
         for i, name in enumerate(fields, start=1):
@@ -122,13 +138,16 @@ class UnbundleAuto:
         # into every renderer, which a blanked label does not.
         # 'names' is OPTIONAL: prompts from saves that predate it carry no
         # such key, and a required input with no value fails validation.
+        # 'in' is optional too: with the node's "get" option on it has no
+        # socket, and the browser fills it from the constant instead --
+        # an unfilled one is explained by name in unpack(). 'get' comes
+        # last, so saves from before it keep their widget positions.
         return {
-            "required": {
+            "required": {},
+            "optional": {
                 "in": (BUNDLE, {
                     "tooltip": "The packed value from a Bundle node.",
                 }),
-            },
-            "optional": {
                 "names": ("STRING", {
                     "default": "",
                     "multiline": True,
@@ -136,11 +155,25 @@ class UnbundleAuto:
                                "to expose, one per line, in output order. "
                                "Empty = the bundle's own fields as packed.",
                 }),
+                "get": ("STRING", {
+                    "default": "", "tooltip": _CONSTANT_TIP % "get"}),
             },
         }
 
     # "in" is a keyword, so it can only arrive through kwargs.
     def unpack(self, **kwargs):
+        name = str(kwargs.pop("get", "") or "").strip()
+        if kwargs.get("in") is None:
+            if name:
+                raise ValueError(
+                    "Unbundle: nothing is set as %r. Check that a Bundle "
+                    "(with 'set' on) or a KJNodes Set of that name exists "
+                    "in this graph or a parent graph, and that it is not "
+                    "muted or bypassed." % name)
+            raise ValueError(
+                "Unbundle: no bundle. Connect a bundle to 'in', or turn "
+                "on 'get' in its settings (the gear) and choose a "
+                "constant.")
         packed = _as_bundle(kwargs.get("in"), "Unbundle")
         # Empty list = follow the bundle. A bundle is an ordered mapping, so
         # its keys are the Bundle node's name lines in their original order
