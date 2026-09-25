@@ -77,7 +77,7 @@ async function fetchResults(rules) {
 
 /**
  * The install, as text for a bug report: what the server knows
- * (/obvpm/compat/report: ComfyUI, Python, torch, OS, every loaded pack
+ * (/obvpm/compat/report: ComfyUI and its commit, Python, torch, OS, every loaded pack
  * with version and commit) plus what only the browser knows (frontend
  * version, Nodes 2.0 or classic, language, browser) and the current
  * results of this node's rules.
@@ -93,7 +93,9 @@ async function reportText(answer) {
     const vue = typeof LiteGraph !== "undefined" && LiteGraph.vueNodesMode != null
         ? !!LiteGraph.vueNodesMode : !!setting("Comfy.VueNodes.Enabled");
     const lines = [
-        "ComfyUI " + String(s.comfyui || "unknown") + " · frontend " + frontend
+        "ComfyUI " + String(s.comfyui || "unknown")
+            + (s.comfyui_commit ? " (" + String(s.comfyui_commit) + ")" : "")
+            + " · frontend " + frontend
             + " · " + (vue ? "Nodes 2.0" : "classic nodes"),
         "Python " + String(s.python || "?") + " · torch " + String(s.torch || "?")
             + " · " + String(s.os || "?"),

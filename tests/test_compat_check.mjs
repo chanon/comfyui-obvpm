@@ -561,3 +561,14 @@ test("the report is the install, the browser's facts and the results, as text", 
     assert.equal(lines[10], "  FAIL The wrong X is installed — <b>fork</b>");
     assert.equal(lines.length, 13);
 });
+
+test("the report names ComfyUI's commit when the server found one", async () => {
+    const { reportText } = await load();
+    REPORT.comfyui_commit = "1568e6cfd";
+    try {
+        const lines = (await reportText(ANSWER)).split("\n");
+        assert.equal(lines[0], "ComfyUI 0.37.2 (1568e6cfd) · frontend 1.53.6 · Nodes 2.0");
+    } finally {
+        delete REPORT.comfyui_commit;
+    }
+});

@@ -239,11 +239,28 @@ class Checking(unittest.TestCase):
                 del sys.modules["nodes"].LOADED_MODULE_DIRS
                 del sys.modules["comfyui_version"]
         self.assertEqual(report["comfyui"], "0.37.2")
+        self.assertEqual(report["comfyui_commit"], "", "no comfyui_version file: no folder, never the cwd")
         self.assertTrue(report["python"] and report["os"])
         self.assertEqual([p["name"] for p in report["packs"]], ["pack-a", "pack-b", "pack-c"])
         self.assertEqual(report["packs"][0], {"name": "pack-a", "version": "1.2.3", "commit": "012345678"})
         self.assertEqual(report["packs"][1], {"name": "pack-b", "version": "", "commit": "fedcba987"})
         self.assertEqual(report["packs"][2], {"name": "pack-c", "version": "", "commit": ""})
+
+    def test_install_report_reads_comfyuis_own_commit(self):
+        with tempfile.TemporaryDirectory() as root:
+            clone = os.path.join(root, "ComfyUI")
+            os.makedirs(os.path.join(clone, ".git"))
+            with open(os.path.join(clone, ".git", "HEAD"), "w") as fh:
+                fh.write("1568e6cfd04586a4b3c4e1817ea7dde09b1bf9e7\n")     # detached, as an update leaves it
+            plain = os.path.join(root, "desktop")
+            os.makedirs(plain)
+            try:
+                for folder, want in ((clone, "1568e6cfd"), (plain, "")):
+                    core("0.37.0")
+                    sys.modules["comfyui_version"].__file__ = os.path.join(folder, "comfyui_version.py")
+                    self.assertEqual(compat.install_report()["comfyui_commit"], want, folder)
+            finally:
+                del sys.modules["comfyui_version"]
 
 
 class TheNode(unittest.TestCase):

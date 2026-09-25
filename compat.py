@@ -439,6 +439,16 @@ def core_version():
     return parse_version(__version__), str(__version__)
 
 
+def core_folder():
+    """ComfyUI's own folder (where comfyui_version.py sits), or ''."""
+    try:
+        import comfyui_version
+    except Exception:
+        return ""
+    where = getattr(comfyui_version, "__file__", None)
+    return os.path.dirname(os.path.abspath(where)) if where else ""
+
+
 def _loaded_packs():
     """{folder name: path} of every custom node pack ComfyUI loaded --
     core keeps the list by the folder's basename, which is how a pack
@@ -468,8 +478,11 @@ def pack_version_at(folder):
 
 
 def git_commit(folder):
-    """The short commit a pack folder is checked out at, read from the
-    .git files (no git process): '' when it is not a clone."""
+    """The short commit a folder (a pack, or ComfyUI itself) is checked
+    out at, read from the .git files (no git process): '' when it is not
+    a clone."""
+    if not folder:
+        return ""
     git = os.path.join(folder, ".git")
     if not os.path.isdir(git):
         return ""
@@ -508,6 +521,9 @@ def install_report():
                       "commit": git_commit(path)})
     return {
         "comfyui": comfy,
+        # a nightly sits between releases under the release's version;
+        # the desktop app and pip installs are not clones: ''
+        "comfyui_commit": git_commit(core_folder()),
         "python": platform.python_version(),
         "torch": torch_text,
         "os": "%s %s" % (platform.system(), platform.release()),
