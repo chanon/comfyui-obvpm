@@ -8,7 +8,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 ### Latest HEAD
 
-- New node **Compatibility Check**: write what the workflow needs (`comfyui >= 0.35.0`, `frontend >= 1.53.0`, `some-pack >= 1.2 https://github.com/owner/repo`, `node NodeId`, `node NodeId has input_name`, `not node NodeId`, `not pack Name`) and the node shows whether the install can run the workflow on its face as the workflow loads (every rule, as tables, in **view details**, where the rules are also edited), and stops a run with what to fix -- the fix and a link -- while anything fails. The `has input_name` form catches a fork that registers the same node name with different widgets; the `not` forms catch packs known to break the workflow when installed. Its **copy report** button copies the whole install (ComfyUI, frontend, Nodes 2.0 or classic, Python, torch, OS, every custom node pack with version and commit) for pasting into a bug report.
+- New node **Compatibility Check**: It allows workflow creators to configure the minimum ComfyUI version required, and also what custom node packs are required for the workflow to work. Then when a user opens the workflow, they can see from the node if they are missing any node packs or if they are on a too old version of anything. Created to reduce support load from my [timeline workflow](https://github.com/obvpm/comfyui-obvpm-timeline). Also has a "copy report" button that lists the complete installation details for bug reports.
 
 ### 0.2.5 (2026-09-24)
 
@@ -26,14 +26,6 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 - Peek Bundle: fixed issue where it was not updating in Nodes 2.0
 - Load Images & Compose + Load Image & Crop, Peek Bundle: fixed sizing issues in Nodes 2.0
 - Bundle/Unbundle: fixed collapsed bundle/unbundle nodes showing nothing at all in Nodes 2.0 and having wrong wire position
-
-### 0.2.3 (2026-09-22)
-
-- Load Images & Compose: an empty node with no images now outputs `None` instead of raising an error. So you don't have to ctrl-b disable empty ones when eg. using one as a reference image input to MiniMax H3.
-- Value Presets: a field can now depend on another one. Add `when turbo_loader != off` (or `when spectrum = true`, or `when mode = a, b` for any of several values) after a field's default, and the field is only shown while the choice or true/false field named holds one of those values. While hidden, its value on the bundle is `None` -- so a LoRA name sitting behind an "off" switch is never applied, and its widget no longer suggests that it is. The value is kept and comes back when the field does.
-- Value Presets: a field can carry a hint. Put `# any text` at the end of its schema line and it shows when hovering over the widget.
-- Value Presets: the schema editor has a `copy` button that copies the schema as text, and a `paste` button that replaces the fields with a pasted one (checked first; nothing changes on the node until Apply). The editor also has columns for the condition and the hint.
-- The package published to the Comfy Registry no longer contains the tests and CI helpers, only the pack itself (`.comfyignore`).
 
 ## YouTube Intro Videos
 
@@ -91,6 +83,12 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 | [Unbundle](#unbundle)       | Expand a bundle back into wires   |
 | [Peek Bundle](#peek-bundle) | Show what is on a bundle wire     |
 
+**[Compatibility Check](#compatibility-check)** — obvpm/gates
+
+| Node                                        | What it does                                               |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| [Compatibility Check](#compatibility-check) | Refuse to run until the install meets the workflow's needs |
+
 **[Gates and Switches](#gates-and-switches)** — obvpm/gates, obvpm/switches
 
 | Node                                                                                                                            | What it does                                            |
@@ -98,7 +96,6 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 | [Optional Image / Video / Audio / Latent / Any](#optional-image--optional-video--optional-audio--optional-latent--optional-any) | Pass a value through; mute or bypass when it is missing |
 | [Required Model](#required-model)                                                                                               | Refuse to queue until a model is wired in               |
 | [Mute If](#mute-if)                                                                                                             | Block everything downstream on a boolean                |
-| [Compatibility Check](#compatibility-check)                                                                                     | Refuse to run until the install meets the workflow's needs |
 | [Lazy Switch](#lazy-switch)                                                                                                     | Boolean two-way switch; only the chosen side runs       |
 | [Lazy Switch 2 Values / 3 Values](#lazy-switch-2-values--3-values)                                                              | The same switch for two or three values together        |
 | [Lazy Case Switch](#lazy-case-switch)                                                                                           | Pick a branch by name from a list you write             |
@@ -307,6 +304,43 @@ Only sockets that could be carrying the bundle are followed, so a `cases` or `se
 
 Laziness is preserved end to end. A Bundle sits *on* a branch, so when that branch isn't selected the whole thing — bundle and everything feeding it — is skipped, exactly as if the values were wired directly.
 
+## Compatibility Check
+
+<img src="assets/compat_node.png" title="" alt="Compatibility Check node listing a compatibility issue with the required and installed versions" width="903">
+
+Allows workflow creators to configure the minimum ComfyUI version required, and also what custom node packs are required for the workflow to work. Then when a user opens the workflow, they can see from the node if they are missing any node packs or if they are on a too old version of anything. Also has a "copy report" button that lists the complete installation details for bug reports.
+
+### Details
+
+The node's face says whether this install can run the workflow and names anything that fails; **view details** shows every rule in a table per kind (ComfyUI, node packs, nodes, must not be installed) with the result, what is required, what is installed, the link, and for a failure what was found and the fix. A queued run stops at this node, before anything else runs, with the same list while anything fails. The node has no sockets: just drop it into the workflow.
+
+To change the requirements (this is for the workflow's author), press the **settings** (⚙) button in the details: the tables become editable, with **+ Add** and a remove button per row, a rule's note is edited from its **Note** button, and nothing changes until **Apply** (**Cancel** or Escape backs out). **Edit as Text** opens the same rules as text, one requirement per line, for pasting a list. Under the tables the rules are stored as text, like this:
+
+```
+comfyui >= 0.35.0
+frontend >= 1.53.0
+comfyui-obvpm >= 0.2.3   https://github.com/chanon/comfyui-obvpm
+node MinimaxH3LatentUpscaler3D has enable_temporal_chunking   https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler   # the original pack, not the Plus fork
+node ModelPreviewOverrideKJ   https://github.com/kijai/ComfyUI-KJNodes   # ComfyUI-KJNodes
+not pack ComfyUI-Workflow-Encrypt   # rewrites saved workflows
+```
+
+A github.com URL on the line becomes the link shown with the result (any other address is shown as plain text, never as a link; ComfyUI's and the frontend's links are fixed); text after ` #` is shown with a failure. Lines starting with `#` are comments. A rule that cannot be read is shown as a failure naming the line; a check that cannot be made (a node that will not describe itself) passes rather than blocking. Nothing in the rules is ever imported or evaluated.
+
+### Rules Available
+
+Five kinds of rule:
+
+- **`comfyui >= 0.35.0`** — the ComfyUI version.
+- **`frontend >= 1.53.0`** — the ComfyUI frontend's version (Settings › About). On the node's face and in view details it is the version the page is actually running; when a run is queued it is the frontend ComfyUI serves (its installed `comfyui-frontend-package`, or the one named with `--front-end-version`; with `--front-end-root` it cannot be known and passes).
+- **`some-pack >= 1.2.0 https://github.com/owner/repo`** — a pack's version, read from the installed pack's `pyproject.toml`. The pack is found by its repository URL (matched against the `[project.urls]` in its `pyproject.toml` and the git remote it was cloned from, however either is written), else by name (the name in its `pyproject.toml`, or its folder under `custom_nodes`, any case), so it works however the pack was installed and whatever its folder is called. If a pack is found by name but comes from a different repository (a fork, or a renamed repository), the result says so without refusing the run; `node NodeId has input_name` is what catches a fork that loads the workflow wrong. (Older rules with `node: NodeId` still work.)
+- **`node NodeId`** / **`node NodeId has input_name`** — a node must be present, or must declare an input. The second form tells a fork that registers the **same node name with different widgets** apart from the original, which loads a saved workflow wrong and nothing else reports.
+- **`not node NodeId`** / **`not pack Name`** — a node or a pack that must **not** be installed, for the packs known to break the workflow when they are present. `not node` fails while any installed pack registers a node with that id, and names the pack's folder. `not pack` finds the pack the same way a pack rule does: by the repository URL on the line (`not pack https://github.com/owner/repo` needs no name), else by its `pyproject.toml` name or folder.
+
+### Copy Report
+
+**copy report** copies the install as text for a bug report: ComfyUI, frontend, Nodes 2.0 or classic, Python, torch, OS, language, every loaded custom node pack with its version and git commit, and this node's results.
+
 ## Gates and Switches
 
 These nodes are built around making *optional paths* work well: workflows where an input may or may not be connected, where a branch should only run under some condition, and where downstream nodes need something sensible either way.
@@ -349,33 +383,6 @@ The minimal gate: passes a MODEL through. The input is required, so queueing wit
 Passes any input through unchanged; when the `mute` boolean is true, blocks everything downstream. The boolean is connectable, so it can be driven by logic (e.g. a gate's `present` through a Boolean invert). Note: nodes *upstream* of the input still run — use a Lazy Switch when you want the upstream work skipped too.
 
 ### Switches (obvpm/switches)
-
-#### Compatibility Check
-
-What a workflow needs from the install, checked. The node's face says whether this install can run the workflow and names anything that fails; **view details** shows every rule in a table per kind (ComfyUI, node packs, nodes, must not be installed) with the result, what is required, what is installed, the link, and for a failure what was found and the fix. A queued run stops at this node, before anything else runs, with the same list while anything fails. The node has no sockets: just drop it into the workflow.
-
-To change the requirements (this is for the workflow's author), press the **settings** (⚙) button in the details: the tables become editable, with **+ Add** and a remove button per row, a rule's note is edited from its **Note** button, and nothing changes until **Apply** (**Cancel** or Escape backs out). **Edit as Text** opens the same rules as text, one requirement per line, for pasting a list. Under the tables the rules are stored as text, like this:
-
-```
-comfyui >= 0.35.0
-frontend >= 1.53.0
-comfyui-obvpm >= 0.2.3   https://github.com/chanon/comfyui-obvpm
-node MinimaxH3LatentUpscaler3D has enable_temporal_chunking   https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler   # the original pack, not the Plus fork
-node ModelPreviewOverrideKJ   https://github.com/kijai/ComfyUI-KJNodes   # ComfyUI-KJNodes
-not pack ComfyUI-Workflow-Encrypt   # rewrites saved workflows
-```
-
-Five kinds of rule:
-
-- **`comfyui >= 0.35.0`** — the ComfyUI version.
-- **`frontend >= 1.53.0`** — the ComfyUI frontend's version (Settings › About). On the node's face and in view details it is the version the page is actually running; when a run is queued it is the frontend ComfyUI serves (its installed `comfyui-frontend-package`, or the one named with `--front-end-version`; with `--front-end-root` it cannot be known and passes).
-- **`some-pack >= 1.2.0 https://github.com/owner/repo`** — a pack's version, read from the installed pack's `pyproject.toml`. The pack is found by its repository URL (matched against the `[project.urls]` in its `pyproject.toml` and the git remote it was cloned from, however either is written), else by name (the name in its `pyproject.toml`, or its folder under `custom_nodes`, any case), so it works however the pack was installed and whatever its folder is called. If a pack is found by name but comes from a different repository (a fork, or a renamed repository), the result says so without refusing the run; `node NodeId has input_name` is what catches a fork that loads the workflow wrong. (Older rules with `node: NodeId` still work.)
-- **`node NodeId`** / **`node NodeId has input_name`** — a node must be present, or must declare an input. The second form tells a fork that registers the **same node name with different widgets** apart from the original, which loads a saved workflow wrong and nothing else reports.
-- **`not node NodeId`** / **`not pack Name`** — a node or a pack that must **not** be installed, for the packs known to break the workflow when they are present. `not node` fails while any installed pack registers a node with that id, and names the pack's folder. `not pack` finds the pack the same way a pack rule does: by the repository URL on the line (`not pack https://github.com/owner/repo` needs no name), else by its `pyproject.toml` name or folder.
-
-**copy report** copies the install as text for a bug report: ComfyUI, frontend, Nodes 2.0 or classic, Python, torch, OS, language, every loaded custom node pack with its version and git commit, and this node's results.
-
-A github.com URL on the line becomes the link shown with the result (any other address is shown as plain text, never as a link; ComfyUI's and the frontend's links are fixed); text after ` #` is shown with a failure. Lines starting with `#` are comments. A rule that cannot be read is shown as a failure naming the line; a check that cannot be made (a node that will not describe itself) passes rather than blocking. Nothing in the rules is ever imported or evaluated.
 
 #### Lazy Switch
 
