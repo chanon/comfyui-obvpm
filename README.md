@@ -6,7 +6,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
-### Latest HEAD
+### 0.2.9 (2026-09-26)
 
 - Value Presets: fixed the node staying blank ("still waiting for the schema from the server") in workflows where something keeps the canvas redrawing, such as a pack with animated links or live monitors (issue #12). Each redraw asked for the fields again while the answer was on its way, and the answer was then thrown away as out of date, over and over.
 - Value Presets: fixed a false red "its graph holds ANOTHER node under id …" line over preset nodes after a workflow was loaded again (or undone, or its tab switched) while the nodes were still starting up. It came from the node the load replaced, not the one on screen, and showed whenever the node was not selected.
