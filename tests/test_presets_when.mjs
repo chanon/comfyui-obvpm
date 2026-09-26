@@ -255,6 +255,46 @@ test("a build that throws is recorded, not latched, and not retried per frame", 
     assert.ok(node.__obvpmTrace.some((e) => e.e === "built"));
 });
 
+// issue #12, the reporter's trace: on a canvas that redraws every frame
+// (a pack animating), the draw loop's rebuild() during each request was
+// taken as "a rebuild was asked for meanwhile", the answer discarded,
+// and the node asked forever without building.
+test("a canvas redrawing during the request does not discard its answer", async () => {
+    const { p, asked } = await harness();
+    const node = new Node({});
+    const flight = p.rebuild(node);
+    // a frame or two while the answer is in the air, every time
+    for (let frame = 0; frame < 50 && node.__obvpmBuilding !== false; frame++) {
+        void p.rebuild(node);
+        await tick();
+    }
+    await flight;
+    assert.equal(node.__obvpmBuilt, field(node, "schema").value, "built");
+    assert.ok(field(node, "steps"), "the fields are there");
+    assert.equal(asked.schema, 1, "asked once");
+    assert.ok(!node.__obvpmTrace.some((e) => e.e === "stale"), "no answer discarded");
+});
+
+test("a different schema, or a forced build, during the request still asks again", async () => {
+    // the load case: the default schema is in the air when the workflow's
+    // own arrives (onConfigure) -- that answer must not be built from
+    for (const how of ["new text", "forced"]) {
+        const { p, asked } = await harness();
+        const node = new Node({});
+        const flight = p.rebuild(node);
+        if (how === "new text") {
+            field(node, "schema").value += "\nsteps: int = 20";
+            void p.rebuild(node);
+        } else {
+            void p.rebuild(node, true);
+        }
+        await flight;
+        await tick(); await tick();
+        assert.equal(asked.schema, 2, how + ": asked again");
+        assert.equal(node.__obvpmBuilt, field(node, "schema").value, how + ": built from the current text");
+    }
+});
+
 test("a node its graph does not hold is recorded with why, and not re-asked per frame", async () => {
     const { p, asked } = await harness();
     const node = new Node({});

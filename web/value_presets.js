@@ -503,6 +503,13 @@ async function rebuild(node, force) {
     // the watchdog retries it, the draw loop does not.
     if (!force && node.__obvpmNotLiveSchema === schema) return;
     if (node.__obvpmBuilding) {
+        // The draw loop asks again every frame while the answer is in the
+        // air. For the text already being asked about that is no news:
+        // the flight answers it. Remembering it as a rerun discarded
+        // every answer on a canvas that redraws each frame (a pack that
+        // animates), so the node asked forever and never built (issue #12:
+        // "stale: a rebuild was asked for meanwhile" on a loop).
+        if (!force && schema === node.__obvpmBuildingSchema) return;
         // Not dropped: remembered, and re-run when the flight lands.
         // The call this guard used to swallow was onConfigure's -- the
         // one carrying a loaded workflow's schema and values -- while
@@ -513,6 +520,7 @@ async function rebuild(node, force) {
         return;
     }
     node.__obvpmBuilding = true;
+    node.__obvpmBuildingSchema = schema;
     node.__obvpmBuildingSince = Date.now();
     trace(node, "build", (force ? "forced" : "schema changed") + ", "
           + schema.length + " chars");
@@ -522,6 +530,7 @@ async function rebuild(node, force) {
         answer = await describe(schema);
     } finally {
         node.__obvpmBuilding = false;
+        node.__obvpmBuildingSchema = null;
     }
     trace(node, "schema-answer", (Date.now() - asked) + " ms, "
           + (answer?.fields?.length ?? 0) + " fields"

@@ -6,6 +6,10 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Value Presets: fixed the node staying blank ("still waiting for the schema from the server") in workflows where something keeps the canvas redrawing, such as a pack with animated links or live monitors (issue #12). Each redraw asked for the fields again while the answer was on its way, and the answer was then thrown away as out of date, over and over.
+
 ### 0.2.8 (2026-09-26)
 
 - Compatibility Check: new **Message & Links** in the details, for workflow authors: a short text and a list of links the node shows when the install can run the workflow (for example a tutorial video, a Discord, a support page). Links open only on trusted sites (GitHub, GitLab, Hugging Face, Civitai, YouTube, Discord, Patreon and a few more), with the real site shown next to each. See [Message & Links](#message--links).
