@@ -380,6 +380,27 @@ app.registerExtension({
             return r;
         };
 
+        // A node taken out of its graph -- deleted, or replaced by a load,
+        // an undo or a tab switch -- is done: its watchdog, its retries and
+        // an answer still on the way must leave it alone. `node.graph` does
+        // not say so (a clear leaves it set, see rebuild), and the new node
+        // under the same id made the old one's watchdog report "its graph
+        // holds ANOTHER node" -- on a problem line added to the removed
+        // node, a DOM widget nothing ever took down, drawn over the node
+        // that replaced it wherever that one was not selected.
+        const removed = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            this.__obvpmRemoved = true;
+            clearTimeout(this.__obvpmWatch);
+            trace(this, "removed", "id " + this.id);
+            return removed?.apply(this, arguments);
+        };
+        const added = nodeType.prototype.onAdded;
+        nodeType.prototype.onAdded = function () {
+            this.__obvpmRemoved = false;        // put back: live again
+            return added?.apply(this, arguments);
+        };
+
         // A workflow load replaces widget values AFTER creation, so the
         // controls have to be rebuilt once the real schema and values
         // are in place -- otherwise every loaded node shows the defaults.
@@ -493,6 +514,7 @@ function asDropdown(node, name, valuesFn) {
  * is reading anyway.
  */
 async function rebuild(node, force) {
+    if (node.__obvpmRemoved) return;                   // see onRemoved
     const schema = String(widget(node, SCHEMA)?.value ?? "");
     if (!force && node.__obvpmBuilt === schema) return;
     // A schema whose build threw is not retried from the draw loop (one
@@ -544,6 +566,11 @@ async function rebuild(node, force) {
     // removed, because a removed node is not removed twice. That was
     // the duplicate row under a reloaded workflow (2026-09-10). The
     // graph has to still hold THIS node object.
+    if (node.__obvpmRemoved) {
+        // removed while asking: nothing to build and nothing to say
+        trace(node, "dropped", "the node was removed while asking");
+        return;
+    }
     if (!isLive(node)) {
         // Not silent: a node that IS on the canvas but fails this (its
         // id answers with another node, or its graph is not the one it
@@ -1489,7 +1516,7 @@ function watch(node) {
 }
 
 async function checkBuilt(node) {
-    if (!node.graph) return;                           // removed: nothing to say
+    if (!node.graph || node.__obvpmRemoved) return;    // removed: nothing to say
     const schema = String(widget(node, SCHEMA)?.value ?? "");
     const built = node.__obvpmBuilt === schema && !!node.__obvpmRow;
     if (built) return;
@@ -1526,6 +1553,9 @@ async function checkBuilt(node) {
  * made), so it goes away by itself once things work.
  */
 function showProblem(node, why) {
+    // never on a removed node: a widget added to it now is never taken
+    // down, and shows over whatever node took its place
+    if (node.__obvpmRemoved) return;
     node.__obvpmProblem = why;
     const text = "⚠ " + why + " -- right-click the node, Copy Value Presets diagnostics";
     // console too, once per problem: the one place a user may already be

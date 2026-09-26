@@ -295,6 +295,33 @@ test("a different schema, or a forced build, during the request still asks again
     }
 });
 
+// The 005 report: after a load over an open workflow, every preset node
+// showed "its graph holds ANOTHER node under id ..." -- said by the
+// REPLACED node (removed while its schema request was out), on a problem
+// line nothing ever took down, drawn over the node that replaced it.
+test("a node removed while asking stays quiet: no build, no problem, no more requests", async () => {
+    const { p, extensions, asked } = await harness();
+    class PresetsNode extends Node {}
+    await extensions[0].beforeRegisterNodeDef(PresetsNode, { name: "ValuePresets (obvpm)" });
+    const node = new PresetsNode({});
+    const flight = p.rebuild(node, true);
+    node.onRemoved();                              // a load replaces it meanwhile
+    await flight;
+    await tick();
+    assert.equal(field(node, "steps"), undefined, "nothing built on it");
+    assert.ok(node.__obvpmTrace.some((e) => e.e === "dropped"), "the late answer is dropped");
+    assert.ok(!node.__obvpmTrace.some((e) => e.e === "not-live"), "not reported as a problem");
+    assert.equal(field(node, "obvpm_problem"), undefined, "no problem line added");
+    const before = asked.schema;
+    for (let frame = 0; frame < 5; frame++) await p.rebuild(node, true);
+    assert.equal(asked.schema, before, "a removed node asks nothing, forced or not");
+    // put back into a graph (onAdded): it builds again
+    node.onAdded();
+    await p.rebuild(node, true);
+    await tick();
+    assert.ok(field(node, "steps"), "built once it is back");
+});
+
 test("a node its graph does not hold is recorded with why, and not re-asked per frame", async () => {
     const { p, asked } = await harness();
     const node = new Node({});

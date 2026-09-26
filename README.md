@@ -9,6 +9,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 ### Latest HEAD
 
 - Value Presets: fixed the node staying blank ("still waiting for the schema from the server") in workflows where something keeps the canvas redrawing, such as a pack with animated links or live monitors (issue #12). Each redraw asked for the fields again while the answer was on its way, and the answer was then thrown away as out of date, over and over.
+- Value Presets: fixed a false red "its graph holds ANOTHER node under id …" line over preset nodes after a workflow was loaded again (or undone, or its tab switched) while the nodes were still starting up. It came from the node the load replaced, not the one on screen, and showed whenever the node was not selected.
 
 ### 0.2.8 (2026-09-26)
 
@@ -25,23 +26,6 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 ### 0.2.6 (2026-09-25)
 
 - New node **Compatibility Check**: It allows workflow creators to configure the minimum ComfyUI version required, and also what custom node packs are required for the workflow to work. Then when a user opens the workflow, they can see from the node if they are missing any node packs or if they are on a too old version of anything. Created to reduce support load from my [timeline workflow](https://github.com/chanon/comfyui-obvpm-timeline). Also has a "copy report" button that lists the complete installation details for bug reports.
-
-### 0.2.5 (2026-09-24)
-
-- Value Presets and Switches: Fixed on ComfyUI frontend 1.53 (ComfyUI 0.37) the preset chooser and a switch's `selected` dropdown were renamed `preset#1` / `selected#1` when the node was created, after which choosing a preset changed nothing and the prompt sent the wrong input name (issue #12). 
-- Bundle: Fixed issue where if ComfyUI is set to a non-English language input pin names could use the translated output pin names of the upstream nodes causing breaks in the downstream Unbundle(s). Workflows need no changes, they will automatically work in the new version.
-- Fixed "Loading aborted due to error reloading workflow data — TypeError: Converting circular structure to JSON" when loading a workflow (for example by dropping a video or image saved from it) on ComfyUI frontend 1.52 (ComfyUI 0.36) with Nodes 2.0 enabled and a Bundle, Unbundle, Value Presets or switch node inside a subgraph (issue #13, comfyui-obvpm-timeline issue #6). The fresh slot objects handed to the Nodes 2.0 renderer are now real slots again instead of plain copies.
-
-### 0.2.4 (2026-09-23)
-
-- Value Presets: The schema editor now has an  **edit as text** button, which opens the schema as text to edit, paste into or copy from; *Use this schema* checks it and replaces the rows.
-- Value Presets: fixed issue where couldn't save preset in ComfyUI Desktop (Electron)
-- Value Presets: can now also rename presets
-- Value Presets: the schema editor's *hint* column is now called *tooltip*, with a ✎ button that opens it in a bigger text box for editing
-- Value Presets: fixed escape button closing the whole schema dialog instead of the popups
-- Peek Bundle: fixed issue where it was not updating in Nodes 2.0
-- Load Images & Compose + Load Image & Crop, Peek Bundle: fixed sizing issues in Nodes 2.0
-- Bundle/Unbundle: fixed collapsed bundle/unbundle nodes showing nothing at all in Nodes 2.0 and having wrong wire position
 
 ## YouTube Intro Videos
 
