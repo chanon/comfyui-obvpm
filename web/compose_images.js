@@ -835,6 +835,9 @@ app.registerExtension({
                 box: null, // drawn image box in the crop editor
                 plan: null,
                 planKey: "",
+                // the `layers` value this node last read or wrote itself;
+                // anything else found there was set from OUTSIDE
+                seen: undefined,
             };
 
             function readLayers() {
@@ -845,11 +848,31 @@ app.registerExtension({
                     state.layers = [];
                     state.error = err.message;
                 }
+                state.seen = layersWidget.value;
                 // Never rewrite refused persisted JSON with an empty/truncated list.
                 state.invalid = !!state.error;
                 if (state.sel >= state.layers.length) state.sel = state.layers.length - 1;
                 for (const layer of state.layers) thumbFor(layer.image, repaint);
             }
+
+            // A value put on `layers` from outside -- the timeline's "load
+            // settings" restoring a take, Value Presets, anything that
+            // assigns a widget -- used to be ignored: the list was read only
+            // at creation and on workflow load, so the node kept showing
+            // (and on the next edit wrote back) its old, often empty list.
+            // Re-read whenever the value is not the one this node last saw.
+            function followValue() {
+                if (state.removed || layersWidget.value === state.seen) return;
+                readLayers();
+                state.planKey = "";
+                repaint();
+            }
+            const prevLayersCallback = layersWidget.callback;
+            layersWidget.callback = function () {
+                const r = prevLayersCallback?.apply(this, arguments);
+                followValue();
+                return r;
+            };
 
             function syncLayers() {
                 if (state.invalid) return;
@@ -869,6 +892,7 @@ app.registerExtension({
                 try { parseLayers(value); }
                 catch (err) { state.error = err.message; state.invalid = true; repaint(); return; }
                 if (layersWidget.value !== value) layersWidget.value = value;
+                state.seen = layersWidget.value;
                 state.planKey = ""; // force a re-plan
                 repaint();
             }
@@ -1529,6 +1553,10 @@ app.registerExtension({
                 },
 
                 draw: function (ctx, _node, widgetWidth, y, H, lowQuality) {
+                    // an assignment that came without a callback (the
+                    // frontend's widget store, a tool that only sets
+                    // .value): one string compare per draw
+                    followValue();
                     const u = ui();
                     // Nodes 2.0 hands a zoomed width and only the minimum
                     // height: see obvpm_ui.js. Fills the row, as in classic.
