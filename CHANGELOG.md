@@ -2,6 +2,10 @@
 
 Changes not yet in a release are listed under **Latest HEAD**; they become a numbered version when the pack is released.
 
+## Latest HEAD
+
+- Bundle, Unbundle and the auto switches: **workflows open much faster**. Every wire in a workflow told these nodes to re-check the whole graph while it loaded -- hundreds of full re-checks for one workflow, each re-wiring sockets and redrawing. They now re-check once, after the load (or the edit) is done, with the same result. Measured on a 200-node workflow: 7.2 s to 3.0 s to open (classic), 11.5-15 s to 5.3 s (Nodes 2.0). Socket label widths are also kept instead of measured again on every resize.
+
 ## 0.2.15 (2026-10-12)
 
 - Load Image & Crop and Load Images & Compose: **symlinks and Windows junctions** inside the input folder are followed -- a library linked in from another drive lists and loads like any other folder, as with core's Load Image. Before, an image reached through a link that pointed outside the input folder was refused ("outside its annotated directory") and such folders were left out of the lists. Paths are now checked as written: `..`, absolute, drive, UNC and stream paths still cannot leave the input (or output/temp) folder. The input listing walks each real folder once, so a link pointing back up the tree neither loops nor lists the same images twice, and a link never takes a real folder's place in the list.

@@ -127,6 +127,31 @@ export function resyncGraph(node) {
 }
 
 /**
+ * Re-sync the graph once, after whatever is happening now has finished.
+ *
+ * Every wired input fires its node's connection hook while a workflow
+ * loads, and each hook asked for a full resync of its own -- hundreds of
+ * them for one load, every one re-deriving every dynamic node, re-pointing
+ * every link (which the Vue layer reacts to) and redrawing: seconds on a
+ * workflow of a few hundred links. A resync reads the graph as it is then,
+ * so one at the end does what all of them did.
+ */
+const resyncDue = new WeakSet();
+function scheduleResync(node) {
+    const graph = node?.graph;
+    if (!graph) {
+        setTimeout(() => resyncGraph(node), 0);
+        return;
+    }
+    if (resyncDue.has(graph)) return;
+    resyncDue.add(graph);
+    setTimeout(() => {
+        resyncDue.delete(graph);
+        resyncGraph(node);
+    }, 0);
+}
+
+/**
  * Replace a text widget with a combo whose options come from `valuesFn`.
  * Swapped IN PLACE: widgets_values is serialised by position, so appending
  * instead would renumber every widget after it.
@@ -889,6 +914,10 @@ const NO_TITLE = 1;   // TitleMode.NO_TITLE
 const SLOT_PADDING = 6;
 
 let measureCtx = null;
+// A node's size is worked out from its labels on every computeSize, and
+// setting a context's font re-parses it each time: the widths are kept,
+// and the font is set only when it changes.
+const textWidths = new Map();
 function textWidth(text) {
     const lg = typeof LiteGraph !== "undefined" ? LiteGraph : {};
     if (!measureCtx) {
@@ -900,8 +929,16 @@ function textWidth(text) {
     }
     const str = String(text ?? "");
     if (!measureCtx) return str.length * ((lg.NODE_TEXT_SIZE ?? 14) * 0.6);
-    measureCtx.font = `${lg.NODE_TEXT_SIZE ?? 14}px ${lg.NODE_FONT ?? "Arial"}`;
-    return measureCtx.measureText(str).width;
+    const font = `${lg.NODE_TEXT_SIZE ?? 14}px ${lg.NODE_FONT ?? "Arial"}`;
+    const key = font + "|" + str;
+    let width = textWidths.get(key);
+    if (width === undefined) {
+        if (measureCtx.font !== font) measureCtx.font = font;
+        width = measureCtx.measureText(str).width;
+        if (textWidths.size > 5000) textWidths.clear();
+        textWidths.set(key, width);
+    }
+    return width;
 }
 
 /**
@@ -1413,19 +1450,19 @@ function watchGraph(node) {
     const onAdded = node.onAdded;
     node.onAdded = function () {
         const r = onAdded?.apply(this, arguments);
-        setTimeout(() => resyncGraph(node), 0);
+        scheduleResync(node);
         return r;
     };
     const onConnectionsChange = node.onConnectionsChange;
     node.onConnectionsChange = function () {
         const r = onConnectionsChange?.apply(this, arguments);
-        setTimeout(() => resyncGraph(node), 0);
+        scheduleResync(node);
         return r;
     };
     const onConfigure = node.onConfigure;
     node.onConfigure = function () {
         const r = onConfigure?.apply(this, arguments);
-        setTimeout(() => resyncGraph(node), 0);
+        scheduleResync(node);
         return r;
     };
 }

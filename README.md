@@ -6,6 +6,10 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Workflows with Bundle, Unbundle or the auto switches **open much faster** (a 200-node workflow: about 7 s to 3 s, or 13 s to 5 s with Nodes 2.0) -- they re-checked the whole graph once per wire while loading; now once.
+
 ### 0.2.15 (2026-10-12)
 
 - Load Image & Crop and Load Images & Compose follow **symlinks and Windows junctions** inside the input folder (a library linked in from another drive), as core's Load Image does; they were refused before.
