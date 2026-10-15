@@ -482,6 +482,25 @@ export function setMode(node, on) {
 const pasteRenames = new Map();
 
 /**
+ * Put back a setter's name that a load lost (issue #47). Widget values
+ * are saved by position, so a workflow opened while an older
+ * comfyui-obvpm was installed -- one without the `set` input -- is saved
+ * again (or kept in the browser's open tab) without the name, and comes
+ * back with the option on and an empty name: every getter of it reads
+ * nothing. The properties survive such a load, and `obvpm_previous`
+ * holds the last name the setter had.
+ */
+function healName(node) {
+    if (!constantOn(node)) return;
+    const w = nameWidget(node);
+    const prev = String(node.properties?.[PREV_PROP] ?? "");
+    if (!w || String(w.value ?? "") !== "" || !prev) return;
+    w.value = prev;
+    console.info(`obvpm: #${node.id} "${node.title}" had lost its set name; `
+                 + `put back "${prev}" (a load by an older comfyui-obvpm)`);
+}
+
+/**
  * Replace the declared text widget with a combo, in place.
  *
  * In place because widgets_values is positional. The old widget comes
@@ -591,6 +610,7 @@ function setup(node, kind) {
     const onConfigure = node.onConfigure;
     node.onConfigure = function () {
         const r = onConfigure?.apply(this, arguments);
+        if (kind === "set") healName(this);
         // A save with the option on comes back with it on; one from
         // before the option existed has no such property, so it is off
         // and nothing about the node changes.

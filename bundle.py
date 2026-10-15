@@ -119,6 +119,14 @@ class SchemaBundle(dict):
 
 def _as_bundle(bundle, node):
     """Bundles are plain {name: value} dicts -- anything else is a miswire."""
+    if bundle is None:
+        # what a KJNodes Get or an Unbundle 'get' hands on when no setter
+        # has its name (issue #47: a load had emptied the setters' names)
+        raise ValueError(
+            "%s: no bundle came in. If it comes through a Get (KJNodes, or "
+            "an Unbundle with 'get'), check that the Bundle or Value "
+            "Presets node it reads has that name in its set_constant "
+            "field." % node)
     if not isinstance(bundle, dict):
         raise ValueError(
             "%s: expected a bundle (a name/value mapping) but got %s. Wire "

@@ -161,6 +161,11 @@ class FromPlainBundles(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expected a bundle"):
             ov.apply_overrides([1, 2], state())
 
+    def test_nothing_came_in(self):
+        # a Get whose name no setter has hands on None (issue #47)
+        with self.assertRaisesRegex(ValueError, "no bundle came in.*set_constant"):
+            ov.apply_overrides(None, state())
+
 
 class Wired(unittest.TestCase):
     def test_a_wired_value_replaces_the_field(self):
