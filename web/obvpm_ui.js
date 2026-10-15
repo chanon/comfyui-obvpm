@@ -324,6 +324,29 @@ export function nodeButtonBar(buttons = []) {
  * silently keeps the previous fill).
  */
 export function themePalette() {
+    return paletteKept ?? (paletteKept = readPalette());
+}
+
+// Read once and kept: the palette changes only with the theme, but every
+// button and row paint asks for it, and each read is a computed-style pass
+// that can make the browser recalculate the whole page's styles first. A
+// theme change -- html/body class, style or data-theme, or a stylesheet
+// put in or changed in <head> -- drops it; the next ask reads it again.
+let paletteKept = null;
+function forgetPalette() { paletteKept = null; }
+try {
+    const mo = new MutationObserver(() => {
+        forgetPalette();
+        // a <link> stylesheet applies once it has loaded, not when added
+        setTimeout(forgetPalette, 1000);
+    });
+    for (const t of [document.documentElement, document.body]) {
+        if (t) mo.observe(t, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
+    }
+    if (document.head) mo.observe(document.head, { childList: true, subtree: true, characterData: true });
+} catch { /* read on every ask, as before */ }
+
+function readPalette() {
     let light = false;
     try {
         const bg = getComputedStyle(document.body)

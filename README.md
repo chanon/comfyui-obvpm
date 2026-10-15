@@ -8,6 +8,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 ### Latest HEAD
 
+- Workflows with Bundle, Unbundle or the auto switches open faster still: about 0.25 s less for a 200-node workflow (sizes and sockets are worked out once, not once per socket; the theme's colours are kept).
 - Workflows with Bundle, Unbundle or the auto switches **open much faster** (a 200-node workflow: about 7 s to 3 s, or 13 s to 5 s with Nodes 2.0) -- they re-checked the whole graph once per wire while loading; now once.
 
 ### 0.2.15 (2026-10-12)

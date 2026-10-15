@@ -4,6 +4,7 @@ Changes not yet in a release are listed under **Latest HEAD**; they become a num
 
 ## Latest HEAD
 
+- Bundle, Unbundle and the auto switches: **workflows open faster still.** While a node is being built, ComfyUI asks its size after every socket it adds, and each answer measured every socket's label; now only the new one's. Trimming spare sockets read the whole socket list again after each removal, and the auto Bundle restated every link after each one; both now happen once. The style sheet that narrows these nodes in Nodes 2.0 was rewritten once per node as a workflow loaded; now once. The theme's colours are read once and kept until the theme changes, not on every button paint. A 200-node workflow: about 0.25 s less in either renderer.
 - Bundle, Unbundle and the auto switches: **workflows open much faster**. Every wire in a workflow told these nodes to re-check the whole graph while it loaded -- hundreds of full re-checks for one workflow, each re-wiring sockets and redrawing. They now re-check once, after the load (or the edit) is done, with the same result. Measured on a 200-node workflow: 7.2 s to 3.0 s to open (classic), 11.5-15 s to 5.3 s (Nodes 2.0). Socket label widths are also kept instead of measured again on every resize.
 
 ## 0.2.15 (2026-10-12)

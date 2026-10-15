@@ -222,14 +222,17 @@ export function syncSockets(node, side, prefix, labels, max) {
         } else {
             node.addOutput(`${prefix}${n}`, "*");
         }
-        have = list();
     }
+    if (want > have.length) have = list();
+    // the list kept in step by hand, not re-read after each removal:
+    // re-reading every slot per removal made trimming a node quadratic
     while (have.length > want) {
         const last = have[have.length - 1];
         if (linked(last.slot)) break;      // connected: leave it be
         if (side === "inputs") node.removeInput(last.index);
         else node.removeOutput(last.index);
-        have = list();
+        have.pop();
+        for (const x of have) if (x.index > last.index) x.index -= 1;
     }
     for (const { slot, n } of have) {
         labelSlot(slot, labels[n - 1] ?? `${prefix}${n} (no line ${n})`);
@@ -841,10 +844,17 @@ function migrateTypedNames(node, prefix, preferTitle) {
 
 function syncAutoSockets(node, prefix, max, listName, preferTitle) {
     const re = new RegExp(`^${prefix}\\d+$`);
+    // every unwired one out, then the links restated once (not after
+    // each removal: that was quadratic in the node's sockets)
+    let removed = false;
     for (let i = (node.inputs?.length ?? 0) - 1; i >= 0; i--) {
         const slot = node.inputs[i];
-        if (re.test(slot.name) && slot.link == null) removeInputAt(node, i);
+        if (re.test(slot.name) && slot.link == null) {
+            node.removeInput(i);
+            removed = true;
+        }
     }
+    if (removed) repointLinks(node);
     const slots = () => (node.inputs ?? []).filter((s) => re.test(s.name));
     if (slots().length < max) {
         node.addInput(`${prefix}${slots().length + 1}`, "*",
@@ -1205,7 +1215,21 @@ function applyVueCompact(node, width) {
     }
     if (COMPACT_NODES.has(id) && COMPACT_NODES.get(id) === px && !foldChanged) return;
     COMPACT_NODES.set(id, px);
-    refreshCompactCss();
+    refreshCompactCssSoon();
+}
+
+// Once at the end of the task, not per node: every rewrite of the sheet
+// rebuilt all the nodes' rules and restyled the page, once for each of a
+// workflow's compact nodes as it loaded. A microtask still runs before
+// anything is painted, so no frame shows the sheet behind.
+let compactCssQueued = false;
+function refreshCompactCssSoon() {
+    if (compactCssQueued) return;
+    compactCssQueued = true;
+    queueMicrotask(() => {
+        compactCssQueued = false;
+        refreshCompactCss();
+    });
 }
 
 /**
@@ -1354,8 +1378,24 @@ function makeCompact(nodeType) {
         const outputs = this.outputs ?? [];
         const widest = (slots) =>
             slots.reduce((w, slot) => Math.max(w, textWidth(label(slot))), 0);
-        const inWidth = widest(inputs);
-        const outWidth = widest(outputs);
+        // While core builds the node it adds the sockets one at a time and
+        // asks for the size after each (expandToFitContent): measuring every
+        // label each time is quadratic (~140 ms for the 011 workflow's 38
+        // Bundles and Unbundles). Those answers are thrown away -- refit
+        // sizes the node from onNodeCreated on -- so until then a running
+        // widest per side is kept, measuring only the sockets added since.
+        const widestSoFar = (slots, side) => {
+            if (this.__obvpmCreated) return widest(slots);
+            const run = (this.__obvpmBuildWidth ??= {})[side] ??= { n: 0, w: 0 };
+            if (slots.length < run.n) { run.n = 0; run.w = 0; }
+            for (let i = run.n; i < slots.length; i++) {
+                run.w = Math.max(run.w, textWidth(label(slots[i])));
+            }
+            run.n = slots.length;
+            return run.w;
+        };
+        const inWidth = widestSoFar(inputs, "in");
+        const outWidth = widestSoFar(outputs, "out");
         const width = inWidth + outWidth + 2 * slotHeight
             + (inWidth && outWidth ? 5 : 0);
         const rows = Math.max(inputs.length, outputs.length, 1);
@@ -1585,6 +1625,9 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = onNodeCreated?.apply(this, arguments);
             const node = this;
+            // built: from here every size is measured whole (makeCompact)
+            node.__obvpmCreated = true;
+            delete node.__obvpmBuildWidth;
             // The node still has its full declared pool at this point.
             const pool = Math.max(max, countSlots(node, spec.side, spec.prefix));
             try {
