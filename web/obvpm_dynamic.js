@@ -589,7 +589,9 @@ function moveAboveSockets(node, name, prefix) {
 export function repointLinks(node) {
     (node.inputs ?? []).forEach((slot, index) => {
         const link = linkById(node.graph, slot.link);
-        if (link) link.target_slot = index;
+        // written only when it differs: a write to a reactive record costs
+        // even when it changes nothing
+        if (link && link.target_slot !== index) link.target_slot = index;
     });
 }
 
@@ -845,18 +847,26 @@ function migrateTypedNames(node, prefix, preferTitle) {
 function syncAutoSockets(node, prefix, max, listName, preferTitle) {
     const re = new RegExp(`^${prefix}\\d+$`);
     // every unwired one out, then the links restated once (not after
-    // each removal: that was quadratic in the node's sockets)
-    let removed = false;
-    for (let i = (node.inputs?.length ?? 0) - 1; i >= 0; i--) {
-        const slot = node.inputs[i];
-        if (re.test(slot.name) && slot.link == null) {
-            node.removeInput(i);
-            removed = true;
-        }
+    // each removal: that was quadratic in the node's sockets) -- except
+    // when the only unwired one is the spare already at the end, still
+    // untyped: taking it out to put the same one back was most of what a
+    // sync cost (every sync, on every load and every tab switch)
+    const inputs = node.inputs ?? [];
+    const unwired = [];
+    let wired = 0;
+    inputs.forEach((slot, i) => {
+        if (!re.test(slot.name)) return;
+        if (slot.link == null) unwired.push(i);
+        else wired += 1;
+    });
+    const spareInPlace = unwired.length === 1 && unwired[0] === inputs.length - 1
+        && wired < max && inputs[unwired[0]].type === "*";
+    if (!spareInPlace && unwired.length) {
+        for (let k = unwired.length - 1; k >= 0; k--) node.removeInput(unwired[k]);
+        repointLinks(node);
     }
-    if (removed) repointLinks(node);
     const slots = () => (node.inputs ?? []).filter((s) => re.test(s.name));
-    if (slots().length < max) {
+    if (!spareInPlace && slots().length < max) {
         node.addInput(`${prefix}${slots().length + 1}`, "*",
                       { ...OPTIONAL_SLOT });
     }
