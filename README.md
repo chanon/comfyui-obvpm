@@ -6,7 +6,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
-### Latest HEAD
+### 0.2.16 (2026-10-15)
 
 - Value Presets and Override Bundle Values: a model in a hidden field (turbo off, an override off) no longer brings up ComfyUI's "Missing Models" warning; shown later and missing, it does, and the warning goes when the field is hidden again.
 - Fixed (timeline #47): a Bundle or Value Presets node set to a constant lost its name when its workflow had been opened with an older comfyui-obvpm, so its Gets read nothing; it now puts the name back when the workflow opens. When nothing comes in on `bundle`, the error says to check the Get's name.
@@ -52,11 +52,6 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 - Value Presets: a node **not used by the next run** fades — when every path from it ends at a switch that will pick another branch, or at nodes a Mute If gate will block, and that is known before the run (a switch's or gate's own setting, a preset value, or the timeline's upscale toggle: while generating, the upscale engine settings and upscale options fade; while upscaling, the generation engine settings). A new or unwired node, or one behind a switch or gate decided at run time, looks as usual. Only the look changes; the node still edits.
 - New node: **Override Bundle Values** — override some of a bundle's values (typically a Value Presets node's) per run, with the preset's own ranges and choices, or by wiring in a value no widget can hold. The Value Presets node marks the fields that are overridden downstream. See [Override Bundle Values](#override-bundle-values).
 - Fixed: Load Images & Compose ignored an image list set from outside the node -- e.g. the timeline's "load settings" restoring a take -- and kept showing (and on the next edit wrote back) its old list. It now re-reads the list whenever it changes.
-
-### 0.2.9 (2026-09-26)
-
-- Value Presets: fixed the node staying blank ("still waiting for the schema from the server") in workflows where something keeps the canvas redrawing, such as a pack with animated links or live monitors (issue #12). Each redraw asked for the fields again while the answer was on its way, and the answer was then thrown away as out of date, over and over.
-- Value Presets: fixed a false red "its graph holds ANOTHER node under id …" line over preset nodes after a workflow was loaded again (or undone, or its tab switched) while the nodes were still starting up. It came from the node the load replaced, not the one on screen, and showed whenever the node was not selected.
 
 ## YouTube Intro Videos
 
