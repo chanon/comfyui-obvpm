@@ -8,6 +8,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 ### Latest HEAD
 
+- Value Presets and Override Bundle Values: a model in a hidden field (turbo off, an override off) no longer brings up ComfyUI's "Missing Models" warning; shown later and missing, it does, and the warning goes when the field is hidden again.
 - Fixed (timeline #47): a Bundle or Value Presets node set to a constant lost its name when its workflow had been opened with an older comfyui-obvpm, so its Gets read nothing; it now puts the name back when the workflow opens. When nothing comes in on `bundle`, the error says to check the Get's name.
 - Switching to a workflow's tab is faster with auto Bundles (the spare input is no longer taken out and put back on every re-check).
 - Workflows with Bundle, Unbundle or the auto switches open faster still: about 0.25 s less for a 200-node workflow (sizes and sockets are worked out once, not once per socket; the theme's colours are kept).

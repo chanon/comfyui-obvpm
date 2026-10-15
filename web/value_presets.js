@@ -308,6 +308,67 @@ function buildFromSaved(node) {
 }
 
 /**
+ * A hidden field's list, with the field's own value in it.
+ *
+ * ComfyUI (frontend 1.55) flags a dropdown whose model-file value is not
+ * in its list as a missing model -- hidden or not -- and asks the user to
+ * open the node and replace it. A hidden field cannot be replaced from
+ * the node, and its value is not used: a field whose `when` is off or
+ * that the node switches off is left out of the bundle (presets.py), and
+ * an override that is off overrides nothing. So while hidden its list
+ * holds its value too, and only then: shown, the list is the machine's
+ * own again and a missing file is missing. The server checks its own
+ * lists, never this one. (Issue: 007's hidden turbo LoRA with turbo off.)
+ */
+function withHiddenValue(node, name, choices) {
+    const live = (node.widgets ?? []).find((x) => x[MARK] && x.name === name);
+    if (!live || !(live.hidden || live.options?.hidden)) return choices;
+    const value = live.value == null ? "" : String(live.value);
+    if (!value || choices.some((c) => String(c) === value)) return choices;
+    return [...choices, value];
+}
+
+// What ComfyUI's missing-model check counts as a model file
+// (missingModelScan.ts, MODEL_FILE_EXTENSIONS).
+const MODEL_FILE = /\.(safetensors|ckpt|pt|pth|bin|sft|onnx|gguf)$/i;
+
+/** A dropdown field holding a model file: what that check looks at. */
+export function isModelField(w) {
+    return w?.[MARK] === true && w.type === "combo"
+        && MODEL_FILE.test(String(w.value ?? ""));
+}
+
+let recheckQueued = false;
+
+/**
+ * Run ComfyUI's missing-model check again, once for everything that
+ * changed in this task. It runs by itself only when a workflow loads, so
+ * a model field shown or hidden afterwards (turbo switched on, a preset
+ * that turns it off again, an override switched) would keep the warning
+ * the load gave, or never get one. Same check and same warning as on
+ * load (frontend 1.55+; older ones have no such check, nothing to do).
+ * The canvas is redrawn after it: the red outline is painted from the
+ * check's result, and the classic canvas paints only when asked. The
+ * result lands a moment AFTER the call returns (measured: <50 ms; it
+ * can wait on the model folder lists), so it is asked again later too.
+ */
+export function recheckMissingModels() {
+    if (recheckQueued || typeof app.refreshMissingModels !== "function") return;
+    recheckQueued = true;
+    setTimeout(async () => {
+        recheckQueued = false;
+        try {
+            await app.refreshMissingModels({ reloadDefs: false, silent: false });
+        } catch (err) {
+            console.warn("obvpm: re-checking missing models failed", err);
+        }
+        for (const ms of [0, 150, 1000]) {
+            setTimeout(() => app.canvas?.setDirty?.(true, true), ms);
+        }
+    }, 0);
+}
+
+/**
  * Build one widget for one field.
  *
  * `serialize = false` on every one of them: their values live in the
@@ -347,7 +408,7 @@ export function fieldWidget(node, field, value, onChange, { filterOf } = {}) {
         // closure answers with this build's list.
         coerced = String(value ?? "");
         w = node.addWidget("combo", shown, coerced, set, {
-            values: () => listed().choices,
+            values: () => withHiddenValue(node, shown, listed().choices),
         });
     } else if (field.kind === "bool") {
         coerced = !!value;
@@ -451,6 +512,7 @@ function applyVisibility(node) {
         if (field.group && shown[field.name]) groupShown[field.group] = true;
     }
     let moved = false;
+    let modelMoved = false;
     for (const w of node.widgets ?? []) {
         if (!w[MARK] || w.name === ROW_NAME) continue;
         const field = w.name.replace(/ {2}⚠$/, "");
@@ -461,8 +523,13 @@ function applyVisibility(node) {
         if (!!(w.hidden || w.options?.hidden) !== hidden) {
             hide(w, hidden);
             moved = true;
+            if (isModelField(w)) modelMoved = true;
         }
     }
+    // A model field that came or went after the node was first laid out
+    // (not the load itself: ComfyUI checks the loaded workflow on its own)
+    if (modelMoved && node.__obvpmVisibilitySettled) recheckMissingModels();
+    node.__obvpmVisibilitySettled = true;
     if (moved && typeof node.computeSize === "function" && node.size) {
         node.setSize?.([node.size[0], node.computeSize()[1]]);
         notifyVue(node);

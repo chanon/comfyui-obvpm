@@ -31,7 +31,8 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { widget, bundleSourceFor, packerOf, syncSockets, hideWidget,
          originOf, linkById, notifyVue, switchInputs, staticInput } from "./obvpm_dynamic.js";
-import { describe, fieldWidget, presetsListeners } from "./value_presets.js";
+import { describe, fieldWidget, isModelField, presetsListeners, recheckMissingModels }
+    from "./value_presets.js";
 import { typeIdOf, userFilters } from "./value_presets_user.js";
 import { addConfigButton } from "./obvpm_bundle_config.js";
 import { el, TEXT, TITLE, DIM, pushButton, openOverlay } from "./obvpm_ui.js";
@@ -452,9 +453,13 @@ function setOn(node, name, on) {
     st.on = st.on.filter((f) => f !== name);
     if (on) st.on.push(name);
     writeState(node, st);
-    show(widget(node, VALUE_PREFIX + name), on);
+    const w = widget(node, VALUE_PREFIX + name);
+    show(w, on);
     if (!isLoading(node)) fitHeight(node);
     scheduleMarks();
+    // the value under a switched override came or went: ComfyUI's
+    // missing-model check looks at it only while shown (value_presets.js)
+    if (isModelField(w)) recheckMissingModels();
 }
 
 function setValue(node, name, value) {
