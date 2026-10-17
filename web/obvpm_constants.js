@@ -35,6 +35,13 @@ import { dropWidgetSockets } from "./obvpm_ui.js";
 // Names follow KJNodes' rules: a setter is visible in its own graph and
 // every subgraph below it; a getter looks in its own graph, then up.
 // Setter names are unique within that scope, across both families.
+//
+// Since the per-field cache fix, an Unbundle can also go virtual itself:
+// when its bundle traces back to a Bundle whose fields the frontend can
+// read (obvpm_dynamic.js), it answers its outputs straight from that
+// Bundle's own input sources and never reaches the server. Everything
+// this cannot model -- a switch or a presets packer on the wire -- keeps
+// the real node and the fill-below path exactly as described here.
 
 export const BUNDLE = "Bundle (obvpm)";
 export const UNBUNDLE = "Unbundle (obvpm)";
@@ -64,8 +71,10 @@ const GET_W = "get";
 const MODE_PROP = "obvpm_constant";
 const TITLE_PROP = "obvpm_title";
 const PREV_PROP = "obvpm_previous";
-const MODE_NEVER = 2;     // LGraphEventMode.NEVER (muted)
-const MODE_BYPASS = 4;    // LGraphEventMode.BYPASS
+// Shared with obvpm_dynamic.js, whose Unbundle resolver needs the same
+// two modes to answer a muted or bypassed packer with nothing.
+export const MODE_NEVER = 2;     // LGraphEventMode.NEVER (muted)
+export const MODE_BYPASS = 4;    // LGraphEventMode.BYPASS
 const HOLLOW_CIRCLE = 7;  // RenderShape.HollowCircle: `in` is optional
 
 // ---------------------------------------------------------------------

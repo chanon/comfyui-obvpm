@@ -6,6 +6,10 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Unbundle: changing one field of a bundle re-runs only what uses that field (e.g. swapping a packed VAE no longer re-runs text encoding and sampling); it stays a real node wherever that cannot be done safely. Contributed by bananasss00 (#23).
+
 ### 0.2.16 (2026-10-15)
 
 - Value Presets and Override Bundle Values: a model in a hidden field (turbo off, an override off) no longer brings up ComfyUI's "Missing Models" warning; shown later and missing, it does, and the warning goes when the field is hidden again.
