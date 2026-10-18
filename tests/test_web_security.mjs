@@ -40,7 +40,7 @@ async function harness() {
         let mod;
         if (name.endsWith("scripts/app.js")) mod = mock({ app });
         else if (name.endsWith("scripts/api.js")) mod = mock({ api });
-        else if (name === "obvpm_ui.js") mod = mock({ themePalette: () => ({}), el: noop, icon: noop, iconButton: noop,
+        else if (name === "obvpm_ui.js") mod = mock({ themePalette: () => ({}), el: noop, keepComboDefined: (c) => c, icon: noop, iconButton: noop,
             ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL", "textBox", "pushButton", "openOverlay", "dropWidgetSockets", "addPanelWidget", "valueTooltip", "legacyCanvasBox", "askText", "askConfirm", "askChoice", "askTextChoice", "notice", "NODE_BUTTON", "NODE_BUTTON_HOVER", "paintNodeButton", "gripHandle", "markRow", "sortableRows"].map(k => [k, noop])),
             nodeButton: () => fakeElement(), nodeButtonBar: () => fakeElement(),
             // the input picker: lists the folder only when it opens, then picks

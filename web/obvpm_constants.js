@@ -1,5 +1,5 @@
 import { app } from "../../scripts/app.js";
-import { dropWidgetSockets } from "./obvpm_ui.js";
+import { dropWidgetSockets, keepComboDefined } from "./obvpm_ui.js";
 
 // Constants on Bundle and Unbundle: the "set" / "get" option in the node's
 // ⚙ dialog joins a Bundle and an Unbundle by a NAME instead of a wire, the
@@ -202,11 +202,31 @@ function graphDescendants(graph, seen = new Set()) {
     return out;
 }
 
-/** A setter can hand its constant to an Unbundle only if it is a bundle. */
+// The field names of the bundle on a node's input, or null when it does
+// not carry one. obvpm_dynamic.js hands its bundleNamesFor in -- it
+// imports this file, so importing it back would make a circle.
+let bundleNamesOn = () => null;
+export function setBundleNamesOn(fn) {
+    bundleNamesOn = fn;
+}
+
+/**
+ * A setter can hand its constant to an Unbundle only if it is a bundle.
+ * A KJNodes Set fed from an Unbundle output is typed "*" (Unbundle
+ * outputs are untyped), so for an untyped one the wire is traced: it
+ * carries a bundle when that bundle's fields can be named.
+ */
 export function carriesBundle(setter) {
     if (isOurSetter(setter)) return true;
-    const type = String(setter?.inputs?.[0]?.type ?? "");
-    return type.split(",").includes(BUNDLE_TYPE);
+    const input = setter?.inputs?.[0];
+    const types = String(input?.type ?? "").split(",");
+    if (types.includes(BUNDLE_TYPE)) return true;
+    if (!types.includes("*") || input?.link == null) return false;
+    try {
+        return bundleNamesOn(setter, input.name) != null;
+    } catch (err) {
+        return false;
+    }
 }
 
 /**
@@ -523,12 +543,12 @@ function asCombo(node, name, valuesFn, onChange) {
     const old = node.widgets[index];
     if (old.type === "combo") {
         old.options.values = valuesFn;
-        return old;
+        return keepComboDefined(old);
     }
     const value = old.value ?? "";
     node.widgets.splice(index, 1);
-    const combo = node.addWidget("combo", name, value, onChange,
-                                 { values: valuesFn });
+    const combo = keepComboDefined(node.addWidget("combo", name, value, onChange,
+                                                  { values: valuesFn }));
     combo.value = value;                // through to the surviving state
     combo.serialize = true;
     if (old.tooltip) combo.tooltip = old.tooltip;

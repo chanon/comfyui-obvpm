@@ -9,6 +9,9 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 ### Latest HEAD
 
 - Unbundle: changing one field of a bundle re-runs only what uses that field (e.g. swapping a packed VAE no longer re-runs text encoding and sampling); it stays a real node wherever that cannot be done safely. Contributed by bananasss00 (#23).
+- Fixed: an Unbundle's `get` list now offers a KJNodes Set fed from another Unbundle's output when it carries a bundle (it was left out, so the list could be empty).
+- Fixed: an Unbundle of a bundle taken out of another bundle now names its fields when that inner bundle came from a Value Presets node or a switch, not only from a Bundle.
+- Fixed: clicking the arrows of a dropdown with nothing to choose (an Unbundle's `get`, a switch's `selected`, a Value Presets dropdown) could freeze the page; the value now stays as it was.
 
 ### 0.2.16 (2026-10-15)
 

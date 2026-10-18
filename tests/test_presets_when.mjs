@@ -64,7 +64,7 @@ async function harness(fields = FIELDS) {
         else if (name === "obvpm_dynamic.js") mod = mock({ staticInput: () => undefined });
         else if (name.endsWith("scripts/api.js")) mod = mock({ api });
         else if (name === "obvpm_ui.js") {
-            mod = mock({ themePalette: () => ({}), el: noop,
+            mod = mock({ themePalette: () => ({}), el: noop, keepComboDefined: (c) => c,
                 valueTooltip: (w, width, base) => base,
                 legacyCanvasBox: (ctx, w, h) => [w, h],
                 ...Object.fromEntries(["TEXT", "TITLE", "INK", "DIM", "EDGE", "FILL", "PANEL",

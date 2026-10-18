@@ -33,6 +33,22 @@ export function dropWidgetSockets(node, names) {
     });
 }
 
+/**
+ * A combo whose list can be empty. Litegraph's arrows then step to index
+ * -1 and set the value to `undefined`, which the canvas cannot draw: every
+ * frame throws and the page looks frozen. That step is ignored.
+ */
+export function keepComboDefined(combo) {
+    const setValue = combo?.setValue;
+    if (typeof setValue !== "function" || combo.__obvpmKeepDefined) return combo;
+    combo.__obvpmKeepDefined = true;
+    combo.setValue = function (value, ...rest) {
+        if (value === undefined) return;
+        return setValue.call(this, value, ...rest);
+    };
+    return combo;
+}
+
 function cssVar(name, fallback) {
     try {
         const v = getComputedStyle(document.documentElement)

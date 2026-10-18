@@ -6,7 +6,7 @@ import { api } from "../../scripts/api.js";
 // palette (the bundle config and Load Images & Compose use them too).
 import { el, TEXT, TITLE, INK, DIM, EDGE, FILL, PANEL,
          textBox, pushButton, openOverlay, askText, askConfirm, askChoice, askTextChoice, notice,
-         dropWidgetSockets, themePalette, valueTooltip, legacyCanvasBox,
+         dropWidgetSockets, keepComboDefined, themePalette, valueTooltip, legacyCanvasBox,
          NODE_BUTTON, NODE_BUTTON_HOVER, gripHandle, markRow,
          sortableRows } from "./obvpm_ui.js";
 import { trace, listenForPageErrors, loadStarted, loadFinished,
@@ -407,9 +407,9 @@ export function fieldWidget(node, field, value, onChange, { filterOf } = {}) {
         // serve stale choices forever. Looked up live, even the old
         // closure answers with this build's list.
         coerced = String(value ?? "");
-        w = node.addWidget("combo", shown, coerced, set, {
+        w = keepComboDefined(node.addWidget("combo", shown, coerced, set, {
             values: () => withHiddenValue(node, shown, listed().choices),
-        });
+        }));
     } else if (field.kind === "bool") {
         coerced = !!value;
         w = node.addWidget("toggle", shown, coerced, set);
@@ -1141,7 +1141,7 @@ function asDropdown(node, name, valuesFn) {
     const old = node.widgets[index];
     if (old.type === "combo") {
         old.options.values = valuesFn;
-        return old;
+        return keepComboDefined(old);
     }
     // The old widget comes OUT before the combo goes in. Frontend 1.53
     // renames a widget added under a name the node already has ("preset"
@@ -1152,8 +1152,8 @@ function asDropdown(node, name, valuesFn) {
     // gone, the store hands the combo its surviving state.
     const value = old.value ?? CUSTOM;
     node.widgets.splice(index, 1);
-    const combo = node.addWidget("combo", name, value, () => {},
-                                 { values: valuesFn });
+    const combo = keepComboDefined(node.addWidget("combo", name, value, () => {},
+                                                  { values: valuesFn }));
     combo.value = value;                // through to the surviving state
     combo.serialize = true;             // this one IS declared server-side
     const appended = node.widgets.indexOf(combo);

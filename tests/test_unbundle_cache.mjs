@@ -29,7 +29,8 @@ const mock = (values) => new vm.SyntheticModule(Object.keys(values), function ()
 }, { context });
 
 const appMock = mock({ app });
-const uiMock = mock({ iconButton: () => "", dropWidgetSockets: () => {} });
+const uiMock = mock({ iconButton: () => "", dropWidgetSockets: () => {},
+    keepComboDefined: (combo) => combo });
 const limitsMock = mock({ cssString: () => "" });
 const configMock = mock({ addConfigButton() {}, applyUnbundleLayout() {},
     hasUnbundleLayout: () => false, openBundleConfig() {},
@@ -62,7 +63,8 @@ const dynamicMod = await load("obvpm_dynamic.js", (spec) => {
 });
 const { resolveUnbundleOutput, unbundleIsVirtual, bundleNamesFor } =
     dynamicMod.namespace;
-const { BUNDLE, UNBUNDLE, MODE_NEVER, MODE_BYPASS } = constantsMod.namespace;
+const { BUNDLE, UNBUNDLE, MODE_NEVER, MODE_BYPASS, carriesBundle } =
+    constantsMod.namespace;
 
 // ---- fake graph toolkit -------------------------------------------------
 let nextLinkId = 1;
@@ -214,6 +216,93 @@ test("KJ Set/Get carrying a bundle", () => {
     assert.equal(unbundleIsVirtual(consumer), true);
     assert.ok(answer(resolveUnbundleOutput(consumer, 0), ckpt, 0));
     assert.ok(answer(resolveUnbundleOutput(consumer, 1), ckpt, 1));
+});
+
+test("a KJ Set fed from an Unbundle output is offered to a get only when it holds a bundle", () => {
+    // Load Images & Compose's extras -> Unbundle -> KJ Set: the Unbundle's
+    // outputs are untyped, so the Set is "*" and only the trace can tell
+    // images_bundle (a bundle) from selected_image (not one).
+    const g = makeGraph("root");
+    app.rootGraph = g;
+    const compose = makeNode(g, 40, "LoadImagesCompose (obvpm)", {
+        outputs: [{ name: "image", type: "IMAGE" }, { name: "extras", type: "OBVPM_BUNDLE" }],
+    });
+    compose.obvpmBundleNames = (slot, path = []) => {
+        if (slot !== 1) return null;
+        if (!path.length) return ["selected_image", "images_bundle"];
+        return path.length === 1 && path[0] === "images_bundle" ? ["image_0", "image_1"] : null;
+    };
+    const unbundle = makeUnbundle(g, 41, outs(["selected_image", "images_bundle"]));
+    wire(g, compose, 1, unbundle, 0);
+    const setFrom = (id, slot) => {
+        const set = makeNode(g, id, "SetNode", {
+            inputs: [{ name: "*", type: "*" }], virtual: true,
+            outputs: [{ name: "*", type: "*" }],
+        });
+        widgetOf(set, "name", "c" + id);
+        wire(g, unbundle, slot, set, 0);
+        return set;
+    };
+    assert.equal(carriesBundle(setFrom(42, 1)), true, "images_bundle is a bundle");
+    assert.equal(carriesBundle(setFrom(43, 0)), false, "selected_image is not");
+    const unwired = makeNode(g, 44, "SetNode", { inputs: [{ name: "*", type: "*" }], virtual: true });
+    assert.equal(carriesBundle(unwired), false, "nothing on it yet");
+    const typed = makeNode(g, 45, "SetNode", { inputs: [{ name: "IMAGE", type: "IMAGE" }], virtual: true });
+    assert.equal(carriesBundle(typed), false, "a typed Set is taken at its word");
+});
+
+// A Value Presets node packs without inputs; its `names` mirror is what
+// a downstream Unbundle reads, as it reads a Bundle's.
+function makePresets(graph, id, names) {
+    const vp = makeNode(graph, id, "ValuePresets (obvpm)", {
+        outputs: [{ name: "out", type: "OBVPM_BUNDLE" }],
+    });
+    widgetOf(vp, "names", names);
+    return vp;
+}
+
+test("a Value Presets bundle packed inside a Bundle: its fields are named after an Unbundle", () => {
+    const { g, ckpt } = packedGraph();
+    const vp = makePresets(g, 130, "steps\ncfg");
+    const outer = makeBundle(g, 131, "model\nsettings", 2);
+    wire(g, ckpt, 0, outer, 0);
+    wire(g, vp, 0, outer, 1);
+    const first = makeUnbundle(g, 132, outs(["model", "settings"]));
+    wire(g, outer, 0, first, 0);
+    const second = makeUnbundle(g, 133, outs([]));
+    wire(g, first, 1, second, 0);
+    assert.equal(JSON.stringify(bundleNamesFor(second, "in")),
+                 JSON.stringify(["steps", "cfg"]));
+    const set = makeNode(g, 134, "SetNode", {
+        inputs: [{ name: "*", type: "*" }], virtual: true,
+    });
+    widgetOf(set, "name", "settings");
+    wire(g, first, 1, set, 0);
+    assert.equal(carriesBundle(set), true, "offered to an Unbundle's get");
+});
+
+test("a bundle inside a bundle through a switch: named when every branch has the same fields", () => {
+    const { g, ckpt } = packedGraph();
+    const a = makePresets(g, 140, "steps\ncfg");
+    const b = makePresets(g, 141, "steps\ncfg");
+    const sw = makeNode(g, 142, "LazyCaseSwitch (obvpm)", {
+        inputs: [{ name: "on_case_1", type: "*" }, { name: "on_case_2", type: "*" }],
+        outputs: [{ name: "out", type: "*" }],
+    });
+    wire(g, a, 0, sw, 0);
+    wire(g, b, 0, sw, 1);
+    const outer = makeBundle(g, 143, "model\nsettings", 2);
+    wire(g, ckpt, 0, outer, 0);
+    wire(g, sw, 0, outer, 1);
+    const first = makeUnbundle(g, 144, outs(["model", "settings"]));
+    wire(g, outer, 0, first, 0);
+    const second = makeUnbundle(g, 145, outs([]));
+    wire(g, first, 1, second, 0);
+    assert.equal(JSON.stringify(bundleNamesFor(second, "in")),
+                 JSON.stringify(["steps", "cfg"]));
+    widgetOf(b, "names", "steps\nsampler");
+    b.widgets.shift();                      // b now packs steps/sampler
+    assert.equal(bundleNamesFor(second, "in"), null, "branches disagree");
 });
 
 test("a switch on the wire: stays real (the server unpacks)", () => {

@@ -7,11 +7,11 @@ import {
     addConfigButton, applyUnbundleLayout, hasUnbundleLayout,
     openBundleConfig, openUnbundleConfig,
 } from "./obvpm_bundle_config.js";
-import { iconButton } from "./obvpm_ui.js";
+import { iconButton, keepComboDefined } from "./obvpm_ui.js";
 import { foldButton, installFold, isFolded, syncFold } from "./obvpm_fold.js";
 import {
     constantOf, isConstantSetter, isOurGetter, isOurSetter, isUnbundle,
-    MODE_BYPASS, MODE_NEVER,
+    MODE_BYPASS, MODE_NEVER, setBundleNamesOn,
 } from "./obvpm_constants.js";
 
 // User-defined dropdowns without a node per list.
@@ -163,7 +163,7 @@ function asDropdown(node, name, valuesFn) {
     const old = node.widgets[index];
     if (old.type === "combo") {          // already swapped (node reloaded)
         old.options.values = valuesFn;
-        return old;
+        return keepComboDefined(old);
     }
     // The old widget comes OUT before the combo goes in. Frontend 1.53
     // renames a widget added under a name the node already has ("selected"
@@ -173,9 +173,9 @@ function asDropdown(node, name, valuesFn) {
     // old widget gone, the store hands the combo its surviving state.
     const value = old.value ?? "";
     node.widgets.splice(index, 1);
-    const combo = node.addWidget("combo", name, value, () => {
+    const combo = keepComboDefined(node.addWidget("combo", name, value, () => {
         node.graph?.setDirtyCanvas(true);
-    }, { values: valuesFn });
+    }, { values: valuesFn }));
     combo.value = value;                // through to the surviving state
     combo.serialize = true;
     const appended = node.widgets.indexOf(combo);
@@ -381,6 +381,23 @@ export function packerOf(node, slotName, depth = 0) {
 }
 
 /**
+ * The Bundle input an Unbundle output's field was packed from:
+ * `{ node, input }` (the input's name), or null when the bundle does not
+ * come from a Bundle. Same lookup as packerOf, one step short of it.
+ */
+function fieldInputOf(unbundle, slot, depth) {
+    const out = unbundle.outputs?.[slot];
+    const field = out ? (out.label || out.localized_name || out.name) : "";
+    const outer = field ? packerOf(unbundle, "in", depth) : null;
+    if (!outer) return null;
+    const at = outer.names.lastIndexOf(field);
+    const carrier = at >= 0
+        ? (outer.node.inputs ?? []).find((i) => i.name === `in_${at + 1}`)
+        : null;
+    return carrier ? { node: outer.node, input: carrier.name } : null;
+}
+
+/**
  * An Unbundle output that carries a bundle another pack's node made: that
  * node, its output slot, and the field names down to this one --
  * `[outer, inner, ...]` -- so the node can name the fields of a bundle it
@@ -414,7 +431,12 @@ export function bundleNamesFor(node, slotName, depth = 0) {
     // another pack's node packed the outer one, that node's own answer
     // for the field path (see fieldPathOf).
     if (isUnbundle(origin)) {
-        const packed = packerOf(node, slotName, depth)?.names;
+        // Named by whatever packed it -- a Bundle, a Value Presets node,
+        // a switch whose branches agree -- found on the Bundle input the
+        // field went in by.
+        const into = fieldInputOf(origin, src.slot, depth + 1);
+        const packed = into
+            ? bundleNamesFor(into.node, into.input, depth + 1) : null;
         if (packed) return packed;
         const at = fieldPathOf(origin, src.slot, depth + 1);
         if (!at) return null;
@@ -447,6 +469,9 @@ export function bundleNamesFor(node, slotName, depth = 0) {
     }
     return lists[0];
 }
+// An Unbundle "get" lists a KJNodes Set fed from an Unbundle output (typed
+// "*") only when this can name the bundle on that wire.
+setBundleNamesOn(bundleNamesFor);
 
 // ---------------------------------------------------------------------
 // Values known before a run
