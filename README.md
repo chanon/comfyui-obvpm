@@ -6,9 +6,9 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
-### Latest HEAD
+### 0.2.17 (2026-10-18)
 
-- Unbundle: changing one field of a bundle re-runs only what uses that field (e.g. swapping a packed VAE no longer re-runs text encoding and sampling); it stays a real node wherever that cannot be done safely. Contributed by bananasss00 (#23).
+- Unbundle: changing one field of a bundle re-runs only what uses that field. This is done by converting the Unbundle to a virtual node, it is left out of the prompt and each output is wired straight to that field's source, the way KJNodes' Set/Get work. It stays a real node wherever that cannot be done safely. Contributed by bananasss00 (#23).
 - Fixed: an Unbundle's `get` list now offers a KJNodes Set fed from another Unbundle's output when it carries a bundle (it was left out, so the list could be empty).
 - Fixed: an Unbundle of a bundle taken out of another bundle now names its fields when that inner bundle came from a Value Presets node or a switch, not only from a Bundle.
 - Fixed: clicking the arrows of a dropdown with nothing to choose (an Unbundle's `get`, a switch's `selected`, a Value Presets dropdown) could freeze the page; the value now stays as it was.
@@ -35,30 +35,6 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 - Fixed: reordering a Bundle's fields or an Unbundle's outputs in their settings swapped values between fields or dropped wires on current ComfyUI frontends.
 - Fixed (#21): editing a schema in the table editor (changing a model field's type to `choice`, say) no longer breaks it with a "has no ':'" error when this machine lacks the schema's default file.
 - Fixed (#22): workflows with Load Images & Compose or Load Image & Crop no longer load slowly when the input folder holds thousands of images (listing it is about 80x faster, and Load Images & Compose lists it only when you open its new `＋ from input folder…` picker, which has a search box).
-
-### 0.2.14 (2026-10-05)
-
-- Bundle and Unbundle settings: Enter is OK.
-- Mute Group If works inside a subgraph: it mutes the group around the subgraph's node.
-- Mute Group If no longer shows a status line ("running …" / "muting …") under its widgets, and a new one is no taller than its two widgets.
-- New, for other packs: a node of another pack can set a bundle constant itself (`obvpmConstantWidget`) and name its fields for Unbundle.
-- Fixed: a Mute Group If subgraph pasted into a second group works in both (both groups stayed on).
-- Value Presets: a node that reads a constant by name, with no Get node in between (a node offering `obvpmConstantRead()`), now counts as reading it. Before, a value whose only reader was such a node seemed to go nowhere, so the presets feeding it faded although they were used.
-- New: **Mute Group If** mutes the group it sits in while its `mute` value is true (or false, with `invert`): every node in the frame is set to Never, so it is left out of the run -- nothing in it starts, loaders included -- and shows greyed, and it comes back when the value turns. The value is read before the run, as the switches read theirs (a widget, a Value Presets field, a primitive, the timeline's upscale toggle); one it cannot tell leaves the group on. Only nodes it muted are unmuted again, and a node covered by several stays muted while any of them wants it. Value Presets fades follow it at once: a preset read only by muted nodes fades too. See [Mute Group If](#mute-group-if).
-- Value Presets: a preset read only by a node that never runs -- one with no outputs that is not an output node, such as a display-only preview -- now fades like an unused one; before, wiring such a display node kept it lit.
-- Value Presets: **headings** — a `## Title` line in the schema puts a heading over the fields below it, so long settings read in groups (in the config dialog it is the new **group** column). A heading hides while every field under it does.
-- Value Presets: **fields switched off per node** — the config dialog's new **on** column. Nodes sharing one schema (and one set of presets) need not all use every field: a field switched off is hidden on that node and `None` on its bundle, and the fields it decides still see it at its default (a field shown `when` the switched-off one has its default value keeps showing). Override Bundle Values downstream keeps it off.
-- Value Presets: works with the timeline's **load settings** ([comfyui-obvpm-timeline](https://github.com/chanon/comfyui-obvpm-timeline)): each changed value is its own row; a changed schema, and each workflow preset that differs, is one row, unticked by default, with what changed inside it behind a collapsed toggle.
-- Value Presets: the **schema** button is now **config**, with three pages: Presets, Schema (as before) and Set.
-- Value Presets: **user presets** — presets kept in your user folder under the node's **Preset Type Id**, shared by every workflow whose node has the same id, so your presets survive a new version of a workflow. The workflow's own presets can be hidden from the chooser. See [Value Presets](#value-presets).
-- Value Presets: nodes with the same Preset Type Id also **share their workflow presets** within a workflow.
-- Value Presets: **export / import** presets as a small JSON file, to move them between workflows or share them.
-- Value Presets: **set to constant**, like a Bundle's set — an Unbundle with get or a KJNodes Get reads the bundle by name, without a wire. Turned on in config; the name is the node's **set_constant** field.
-- Value Presets: a borrowed dropdown whose default is not on this install keeps its dropdown (starting on the first entry) instead of turning into a text field.
-- Value Presets: fields show **as the workflow opens**, not after it has finished loading — the node keeps the last description of its schema with the workflow (a few KB) and builds from it at once, while the server is still asked and wins if it answers differently. A borrowed dropdown's list, and anything taken from it, is never saved: it is read from the browser's own node definitions, so no model or LoRA file names travel in a shared workflow.
-- Value Presets: a node **not used by the next run** fades — when every path from it ends at a switch that will pick another branch, or at nodes a Mute If gate will block, and that is known before the run (a switch's or gate's own setting, a preset value, or the timeline's upscale toggle: while generating, the upscale engine settings and upscale options fade; while upscaling, the generation engine settings). A new or unwired node, or one behind a switch or gate decided at run time, looks as usual. Only the look changes; the node still edits.
-- New node: **Override Bundle Values** — override some of a bundle's values (typically a Value Presets node's) per run, with the preset's own ranges and choices, or by wiring in a value no widget can hold. The Value Presets node marks the fields that are overridden downstream. See [Override Bundle Values](#override-bundle-values).
-- Fixed: Load Images & Compose ignored an image list set from outside the node -- e.g. the timeline's "load settings" restoring a take -- and kept showing (and on the next edit wrote back) its old list. It now re-reads the list whenever it changes.
 
 ## YouTube Intro Videos
 
@@ -104,19 +80,19 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 
 **[Value Presets](#value-presets)** — obvpm/bundle
 
-| Node                            | What it does                                                |
-| ------------------------------- | ----------------------------------------------------------- |
-| [Value Presets](#value-presets) | Named presets from an editable template, output as a bundle |
+| Node                                              | What it does                                                |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| [Value Presets](#value-presets)                   | Named presets from an editable template, output as a bundle |
 | [Override Bundle Values](#override-bundle-values) | Override some of a bundle's values -- a preset's -- per run |
 
 **[Bundles](#bundles-obvpmbundle)** — obvpm/bundle
 
-| Node                              | What it does                                 |
-| --------------------------------- | -------------------------------------------- |
-| [Bundle](#bundle)                 | Pack several values onto one wire            |
-| [Unbundle](#unbundle)             | Expand a bundle back into wires              |
-| [Peek Bundle](#peek-bundle)       | Show what is on a bundle wire                |
-| [Bundle to List](#bundle-to-list) | Turn a bundle's values into a ComfyUI list   |
+| Node                              | What it does                               |
+| --------------------------------- | ------------------------------------------ |
+| [Bundle](#bundle)                 | Pack several values onto one wire          |
+| [Unbundle](#unbundle)             | Expand a bundle back into wires            |
+| [Peek Bundle](#peek-bundle)       | Show what is on a bundle wire              |
+| [Bundle to List](#bundle-to-list) | Turn a bundle's values into a ComfyUI list |
 
 **[Compatibility Check](#compatibility-check)** — obvpm/gates
 
@@ -126,16 +102,16 @@ Every node in this pack is listed with **(obvpm)** after its name, so searching 
 
 **[Gates and Switches](#gates-and-switches)** — obvpm/gates, obvpm/switches
 
-| Node                                                                                                                            | What it does                                            |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| [Optional Image / Video / Audio / Latent / Any](#optional-image--optional-video--optional-audio--optional-latent--optional-any) | Pass a value through; mute or bypass when it is missing |
-| [Required Model](#required-model)                                                                                               | Refuse to queue until a model is wired in               |
-| [Mute If](#mute-if)                                                                                                             | Block everything downstream on a boolean                |
+| Node                                                                                                                            | What it does                                                |
+| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Optional Image / Video / Audio / Latent / Any](#optional-image--optional-video--optional-audio--optional-latent--optional-any) | Pass a value through; mute or bypass when it is missing     |
+| [Required Model](#required-model)                                                                                               | Refuse to queue until a model is wired in                   |
+| [Mute If](#mute-if)                                                                                                             | Block everything downstream on a boolean                    |
 | [Mute Group If](#mute-group-if)                                                                                                 | Mute the group it sits in on a boolean known before the run |
-| [Lazy Switch](#lazy-switch)                                                                                                     | Boolean two-way switch; only the chosen side runs       |
-| [Lazy Switch 2 Values / 3 Values](#lazy-switch-2-values--3-values)                                                              | The same switch for two or three values together        |
-| [Lazy Case Switch](#lazy-case-switch)                                                                                           | Pick a branch by name from a list you write             |
-| [Lazy Case Switch (auto)](#lazy-case-switch-auto)                                                                               | Pick a branch by the title of the node feeding it       |
+| [Lazy Switch](#lazy-switch)                                                                                                     | Boolean two-way switch; only the chosen side runs           |
+| [Lazy Switch 2 Values / 3 Values](#lazy-switch-2-values--3-values)                                                              | The same switch for two or three values together            |
+| [Lazy Case Switch](#lazy-case-switch)                                                                                           | Pick a branch by name from a list you write                 |
+| [Lazy Case Switch (auto)](#lazy-case-switch-auto)                                                                               | Pick a branch by the title of the node feeding it           |
 
 **[Misc](#misc)** — obvpm/values, obvpm/misc
 
@@ -223,7 +199,7 @@ The packer sweeps 48 candidate sheet widths and four placement orders — your l
 | Setting          | What it does                                                                                                                                                                                                                      |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `max_megapixels` | Largest the result may be (1.0 = 1024×1024 pixels) — a cap, not a target, so a sheet of small images comes out small. `0` = no cap (in `fill` sizing, a sheet of the sources' total area). Sides are rounded to a multiple of 16. |
-| `background`     | `black`, `grey` or `white` — seen in the gaps, the padding and the up-to-16-pixel margin left by rounding.                                                                                                                         |
+| `background`     | `black`, `grey` or `white` — seen in the gaps, the padding and the up-to-16-pixel margin left by rounding.                                                                                                                        |
 | `padding`        | Pixels of background all round the composed image and all round each separate image in `extras`. Added outside `max_megapixels` (the cap is the layers' budget); the composed image's sides stay a multiple of 16.                |
 | gap              | Pixels of background between layers, set with the **gap** pill under the Result view. `0` puts them flush; a few pixels helps a model tell one reference from the next.                                                           |
 
@@ -462,12 +438,12 @@ These nodes are built around making *optional paths* work well: workflows where 
 
 ComfyUI offers three different ways to "not run" part of a workflow, and the nodes in this pack are organized around them:
 
-| Mechanism                      | What happens                                                                                                                                      | When to use                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Mute If** (ExecutionBlocker) | Every node downstream of the blocked output is silently skipped. Cannot be caught or handled downstream.                                          | Kill an entire path when its input is missing.                         |
-| **Bypass** (forward `None`)    | Downstream nodes with an *optional* input see it as unconnected and handle the absence themselves. Feeding `None` into a *required* input errors. | Let a tolerant downstream node decide what to do.                      |
-| **Lazy** (lazy inputs)         | The unselected branch is never executed at all — its upstream nodes don't run and cost nothing.                                                   | Conditionally skip expensive work (sampling, upscaling, whole groups). |
-| **Mute Group If** (mode Never) | Every node in a group is left out of the prompt before the run: nothing in it runs, upstream or down, and it shows greyed.                         | Switch a whole part of a workflow off by a setting known before the run. |
+| Mechanism                      | What happens                                                                                                                                      | When to use                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Mute If** (ExecutionBlocker) | Every node downstream of the blocked output is silently skipped. Cannot be caught or handled downstream.                                          | Kill an entire path when its input is missing.                           |
+| **Bypass** (forward `None`)    | Downstream nodes with an *optional* input see it as unconnected and handle the absence themselves. Feeding `None` into a *required* input errors. | Let a tolerant downstream node decide what to do.                        |
+| **Lazy** (lazy inputs)         | The unselected branch is never executed at all — its upstream nodes don't run and cost nothing.                                                   | Conditionally skip expensive work (sampling, upscaling, whole groups).   |
+| **Mute Group If** (mode Never) | Every node in a group is left out of the prompt before the run: nothing in it runs, upstream or down, and it shows greyed.                        | Switch a whole part of a workflow off by a setting known before the run. |
 
 Mute If and bypass act *downstream* of the gate; only lazy evaluation saves the *upstream* work feeding the unselected side.
 
