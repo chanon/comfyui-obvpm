@@ -6,7 +6,7 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
-### Latest HEAD
+### 0.2.18 (2026-10-21)
 
 - Added: a Value Presets node can lend one of its presets to another pack's tool without changing the node (the Timeline runs takes with one).
 
@@ -24,21 +24,6 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 - Switching to a workflow's tab is faster with auto Bundles (the spare input is no longer taken out and put back on every re-check).
 - Workflows with Bundle, Unbundle or the auto switches open faster still: about 0.25 s less for a 200-node workflow (sizes and sockets are worked out once, not once per socket; the theme's colours are kept).
 - Workflows with Bundle, Unbundle or the auto switches **open much faster** (a 200-node workflow: about 7 s to 3 s, or 13 s to 5 s with Nodes 2.0) -- they re-checked the whole graph once per wire while loading; now once.
-
-### 0.2.15 (2026-10-12)
-
-- Load Image & Crop and Load Images & Compose follow **symlinks and Windows junctions** inside the input folder (a library linked in from another drive), as core's Load Image does; they were refused before.
-- Load Images & Compose: a second output, `extras` (a bundle of the selected image and `images_bundle`, the separate images as `image_0`, `image_1`, …); layers can be **muted**; a `padding` widget frames the composed image and each separate image; the gap moved into a pill under the Result view; and **presets** keep whole sets of images and settings in your user folder.
-- New node, **Bundle to List**: a bundle's values as a ComfyUI list, so the next node runs once per value — Unbundle Load Images & Compose's `extras` and wire `images_bundle` into it to get the layers as a list, each at its own size.
-- Value Presets: user presets are kept **one file per preset** (`user/default/obvpm/presets/<preset-type-id>/<name>.json`; older ones move there by themselves), so two browser tabs no longer overwrite each other's presets and presets can be shared as files. **Export…** copies or downloads one preset as that same file; **Import…** opens several at once (and still reads older multi-preset exports).
-- Value Presets: **dropdown filters** -- a new config page, **Filters**, to cut a long dropdown (every model file, say) down to the entries you use: include / exclude patterns per field, saved with your user presets so every node with the same Preset Type Id uses them. Only the dropdown changes; presets and runs still take any entry.
-- Bundle and Unbundle take up to **128** fields (was 16), so a bundle from any Value Presets node fits one Unbundle.
-- Fixed (#18): the Unbundle settings showed only the first 16 fields of a bigger bundle; it now lists all of them, scrolling.
-- Value Presets: a preset name wired into `preset` now selects that preset — its saved values run — for batch tests and choosing a preset from elsewhere in the graph (#20). A name known before the run is applied to the node at once.
-- Drag rows to reorder them (#19) in the Bundle/Unbundle settings, the Value Presets schema table and Message & Links; Alt+↑/↓ moves the row you are typing in, and ↑/↓ in a one-line box goes to the same box in the row above or below; in the schema, Shift-drag or Alt+Shift+↑/↓ moves a whole group, and + add field adds under the row you last worked in.
-- Fixed: reordering a Bundle's fields or an Unbundle's outputs in their settings swapped values between fields or dropped wires on current ComfyUI frontends.
-- Fixed (#21): editing a schema in the table editor (changing a model field's type to `choice`, say) no longer breaks it with a "has no ':'" error when this machine lacks the schema's default file.
-- Fixed (#22): workflows with Load Images & Compose or Load Image & Crop no longer load slowly when the input folder holds thousands of images (listing it is about 80x faster, and Load Images & Compose lists it only when you open its new `＋ from input folder…` picker, which has a search box).
 
 ## YouTube Intro Videos
 

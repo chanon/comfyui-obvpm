@@ -2,7 +2,7 @@
 
 Changes not yet in a release are listed under **Latest HEAD**; they become a numbered version when the pack is released.
 
-## Latest HEAD
+## 0.2.18 (2026-10-21)
 
 - Added: a Value Presets node answers another pack's tool with its presets and the values one would run with, without changing the node (`obvpmPresetLabels()`, `obvpmPresetRunValues(label)`; nothing while its preset is wired). The Timeline uses it to run takes with a preset picked in its own settings.
 
