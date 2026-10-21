@@ -2,6 +2,10 @@
 
 Changes not yet in a release are listed under **Latest HEAD**; they become a numbered version when the pack is released.
 
+## Latest HEAD
+
+- Added: a Value Presets node answers another pack's tool with its presets and the values one would run with, without changing the node (`obvpmPresetLabels()`, `obvpmPresetRunValues(label)`; nothing while its preset is wired). The Timeline uses it to run takes with a preset picked in its own settings.
+
 ## 0.2.17 (2026-10-18)
 
 - Unbundle: **changing one field of a bundle re-runs only what uses that field.** ComfyUI decides what to re-run from everything upstream of a node, so with a real Unbundle in between, swapping the VAE packed into a model/clip/vae bundle re-ran everything after every output of that Unbundle -- text encoding and sampling included. When an Unbundle's bundle comes from a Bundle, the Unbundle is now converted to a virtual node: it is left out of the prompt and each output is wired straight to that field's source, the way KJNodes' Set/Get work. It stays a real node -- unpacking server-side exactly as before -- whenever that cannot be done safely: a switch or Value Presets on the bundle wire, a muted or bypassed Bundle or field source (or a subgraph around one), a subgraph used more than once, or a wire the server would refuse once the Unbundle is gone (text into a dropdown, INT into FLOAT). Bundles inside bundles, Bundle to List and Peek Bundle keep working. Contributed by bananasss00 (#23).

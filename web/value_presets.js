@@ -983,6 +983,25 @@ app.registerExtension({
         nodeType.prototype.obvpmRestoreApply = function (saved, keys) {
             return restoreApplyTo(this, saved, keys);
         };
+        // Another pack's tool (comfyui-obvpm-timeline's, 2026-10-19) runs
+        // with a preset picked in its own settings without touching the
+        // node: the chooser's labels, and the values a label would run with
+        // -- what applying it writes (applyPreset) -- for the queued prompt
+        // only. null while `preset` is wired: the wired name selects then.
+        nodeType.prototype.obvpmPresetLabels = function () {
+            return presetWired(this) ? [] : presetNames(this);
+        };
+        nodeType.prototype.obvpmPresetRunValues = function (label) {
+            if (presetWired(this)) return null;
+            const saved = lookupPreset(this, label);
+            if (!saved || typeof saved !== "object") return null;
+            const next = Object.assign(Object.create(null), readJson(this, VALUES));
+            for (const key of Object.keys(this.__obvpmFieldMap ?? {})) {
+                next[key] = presetValue(this, saved, key);
+            }
+            for (const key of Object.keys(saved)) next[key] = saved[key];
+            return { ...next };
+        };
 
         // A wired name made during the run: the server says which preset
         // ran, and the node shows it (its values, as it would have

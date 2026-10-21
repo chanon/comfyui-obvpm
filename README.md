@@ -6,6 +6,10 @@ ComfyUI nodes to save time and keep your workflows tidy. Bundle multiple wires i
 
 **Also check out my new Timeline node:**  https://github.com/chanon/comfyui-obvpm-timeline It not only lets you extend videos seamlessly, but also **prepend, bridge and even create seamless loops with motion context**!
 
+### Latest HEAD
+
+- Added: a Value Presets node can lend one of its presets to another pack's tool without changing the node (the Timeline runs takes with one).
+
 ### 0.2.17 (2026-10-18)
 
 - Unbundle: changing one field of a bundle re-runs only what uses that field. This is done by converting the Unbundle to a virtual node, it is left out of the prompt and each output is wired straight to that field's source, the way KJNodes' Set/Get work. It stays a real node wherever that cannot be done safely. Contributed by bananasss00 (#23).
