@@ -18,6 +18,12 @@ pointing at an unpacked comfyui-frontend-package wheel's `static` dir).
   +200 wide, and the panel's clientHeight vs scrollHeight. The numbers to
   expect are in obvpm_ui.js `addPanelWidget` (the DOM-panel recipe).
 
+- `open_unmodified.mjs <url> <file.json> [--vue] [--web <dir>]` opens a
+  workflow, touches nothing, and exits 1 if ComfyUI then marks it modified,
+  listing what changed between the state it noted as the workflow opened and
+  now. `--web` serves this pack's web files from a folder (a working copy
+  against an instance that has another one installed). It writes nothing.
+
 - `reload_size.mjs <url> [--vue] [--node=<NodeId>] [--drag=H]` creates a
   node, optionally drags it to H px tall, then saves and loads the workflow
   five times; exits 1 if the size ever changes. A node the user sized must

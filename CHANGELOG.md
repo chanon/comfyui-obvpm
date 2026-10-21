@@ -2,6 +2,10 @@
 
 Changes not yet in a release are listed under **Latest HEAD**; they become a numbered version when the pack is released.
 
+## Latest HEAD
+
+- Fixed: **a workflow with a Bundle or an Unbundle opened as changed** (the unsaved dot, every time, saved or not). ComfyUI notes the state a workflow opens in a moment before these nodes had named their sockets again: a Bundle's first field still read `+` in one of its two name fields, and an Unbundle reading a constant (or one whose bundle was still loading) had its outputs as `out_N (no line N)` until its bundle could be traced. Loaded nodes now keep the names they were saved with until then. And on a canvas that snaps to its grid, a fitted node's size is rounded up to the grid, as saving rounds it, so it no longer shrinks a few pixels on every open.
+
 ## 0.2.18 (2026-10-21)
 
 - Added: a Value Presets node answers another pack's tool with its presets and the values one would run with, without changing the node (`obvpmPresetLabels()`, `obvpmPresetRunValues(label)`; nothing while its preset is wired). The Timeline uses it to run takes with a preset picked in its own settings.

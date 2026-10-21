@@ -1901,9 +1901,58 @@ function watchGraph(node) {
     const onConfigure = node.onConfigure;
     node.onConfigure = function () {
         const r = onConfigure?.apply(this, arguments);
+        keepSavedNames(node);
+        node.__obvpmLoadedAt = performance.now();
         scheduleResync(node);
         return r;
     };
+    // the node being restored from a save (justLoaded): restoring its
+    // names list syncs it mid-way
+    const configure = node.configure;
+    if (typeof configure === "function") {
+        node.configure = function () {
+            node.__obvpmRestoring = true;
+            try {
+                return configure.apply(this, arguments);
+            } finally {
+                node.__obvpmRestoring = false;
+            }
+        };
+    }
+}
+
+/**
+ * A loaded node's sockets keep the names they were saved with, in both
+ * name fields at once.
+ *
+ * Loading restores a socket's `label` but not its `localized_name`, which
+ * is left as the first sync -- run before the load -- set it ("+", a
+ * Bundle's spare). ComfyUI takes the state it will call "unmodified" as
+ * the load ends, before the next sync makes the two agree again, so every
+ * workflow with a Bundle opened as changed (user, 2026-10-21).
+ */
+function keepSavedNames(node) {
+    for (const side of ["inputs", "outputs"]) {
+        for (const slot of node[side] ?? []) {
+            if (typeof slot?.label === "string" && slot.label
+                    && slot.localized_name !== slot.label) {
+                slot.localized_name = slot.label;
+            }
+        }
+    }
+}
+
+// While a workflow loads -- and just after -- a traced node's bundle may
+// not be readable yet: what feeds it is still loading (restoring the
+// node's own names list syncs it mid-load, before its links and its
+// constant's setter are back). Until then its sockets keep the names they
+// were saved with rather than turning into "out_N (no line N)" until the
+// trace works -- which ComfyUI saw as a change, so every workflow with an
+// Unbundle opened as modified (user, 2026-10-21).
+const LOAD_GRACE_MS = 3000;
+function justLoaded(node) {
+    return !!node.__obvpmRestoring || (node.__obvpmLoadedAt != null
+        && performance.now() - node.__obvpmLoadedAt < LOAD_GRACE_MS);
 }
 
 // Which multiline widget drives each node, and what its lines control.
@@ -2035,7 +2084,17 @@ app.registerExtension({
                 // A node loaded with its collapsed flag set gets its title
                 // back here; a fold flipped since the last sync likewise.
                 if (spec.fold && syncFold(node)) node.__obvpmSlotSig = null;
-                const size = node.computeSize();
+                let size = node.computeSize();
+                // A canvas that snaps to its grid saves sizes rounded up to
+                // it: fitted to the grid the same way, a loaded node keeps
+                // the size it was saved with (user, 2026-10-21: every open
+                // shrank a few Unbundles a few px, so every open was a change)
+                const LG = typeof LiteGraph !== "undefined" ? LiteGraph : null;
+                const grid = Number(LG?.CANVAS_GRID_SIZE) || 0;
+                if (LG?.alwaysSnapToGrid && grid > 1) {
+                    size = [Math.ceil(size[0] / grid) * grid,
+                            Math.ceil(size[1] / grid) * grid];
+                }
                 // Collapsed, litegraph draws the title row and ignores the
                 // size; it is still kept current for the unfold.
                 node.setSize?.(size);
@@ -2173,8 +2232,12 @@ app.registerExtension({
                         // append (arrange reads the live trace).
                         applyUnbundleLayout(node);
                     } else if (spec.side) {
-                        syncSockets(node, spec.side, spec.prefix,
-                                    valuesFn(), pool);
+                        const values = valuesFn();
+                        // its bundle not traceable yet, just loaded: the
+                        // sockets, names and size it was saved with stay
+                        // (justLoaded)
+                        if (!values.length && spec.trace && justLoaded(node)) return;
+                        syncSockets(node, spec.side, spec.prefix, values, pool);
                     }
                     refit(node);
                 };
