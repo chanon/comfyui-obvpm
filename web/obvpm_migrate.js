@@ -140,11 +140,14 @@ app.registerExtension({
         // the only point that is early enough for both.
         const orig = app.loadGraphData;
         if (typeof orig !== "function" || orig.__obvpmMigrate) return;
-        const wrapped = async function (graphData, ...rest) {
-            try { migrateGraph(graphData, registeredTypes()); } catch (e) {
-                console.warn("obvpm: id migration skipped", e);
+        const wrapped = async function () {
+            const graphData = arguments[0];
+            if (graphData) {
+                try { migrateGraph(graphData, registeredTypes()); } catch (e) {
+                    console.warn("obvpm: id migration skipped", e);
+                }
             }
-            return orig.call(this, graphData, ...rest);
+            return orig.apply(this, arguments);
         };
         wrapped.__obvpmMigrate = true;
         app.loadGraphData = wrapped;
