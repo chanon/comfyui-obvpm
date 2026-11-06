@@ -315,8 +315,15 @@ export function bundleSourceFor(node, slotName, depth = 0) {
     if (fromBoundary(node.graph, link)) {
         const instance = instanceOf(node.graph);
         const outer = instance?.inputs?.[link.origin_slot];
-        return outer
-            ? bundleSourceFor(instance, outer.name, depth + 1) : null;
+        if (!outer) return null;
+        // Nothing plugged into that socket but it carries a promoted-input
+        // literal: the frontend sends that value as a scalar, so it IS what
+        // arrives. Signal it as a literal (no node/slot to trace).
+        if (outer.link == null) {
+            const w = instance?.widgets?.find((x) => x.name === outer.name);
+            return w && w.value != null ? { literal: w.value } : null;
+        }
+        return bundleSourceFor(instance, outer.name, depth + 1);
     }
     const wrapper = link ? node.graph.getNodeById(link.origin_id) : null;
     // A bundle packed inside a subgraph arrives through the wrapper's
@@ -505,6 +512,7 @@ export function staticInput(node, name, depth = 0) {
         return w ? w.value : undefined;
     }
     const src = bundleSourceFor(node, name);
+    if (src && Object.hasOwn(src, "literal")) return src.literal;
     return src?.node ? staticOutput(src.node, src.slot, depth + 1) : undefined;
 }
 
@@ -521,6 +529,19 @@ export function staticOutput(node, slot, depth = 0) {
     }
     if (PRIMITIVES.test(node.type ?? "")) return widget(node, "value")?.value;
     if (node.type === "PrimitiveNode") return node.widgets?.[0]?.value;
+    if (node.type === "Dropdown (obvpm)") {
+        // a dropdown you define yourself: its own selection is known before any run.
+        // Output 0 ("value") is the chosen line verbatim -- exactly what pick()
+        // returns, so a wire from it into Value Presets' `preset` names that preset.
+        if (slot !== 0) return undefined;
+        const sel = widget(node, "selected")?.value ?? "";
+        if (String(sel).trim()) return String(sel);
+        // empty selection runs the first option (Dropdown.pick): mirror it so a
+        // wired name matches what actually runs.
+        const opts = widget(node, "options")?.value;
+        const lines = (opts ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+        return lines.length ? lines[0] : undefined;
+    }
     if (node.type === "ComfyNotNode") {
         // the core Not: Python's `not value`, for the plain values whose
         // truth JS reads the same way
