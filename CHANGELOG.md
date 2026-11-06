@@ -4,6 +4,8 @@ Changes not yet in a release are listed under **Latest HEAD**; they become a num
 
 ## Latest HEAD
 
+- Fixed: **a Value Presets inside a subgraph kept showing its hand-set values when its `preset` input was wired from outside the subgraph.** The preset selection follows the wire to find the name before a run (`staticInput`), and that trace climbs through a single-use subgraph boundary correctly — but it then reads the outer source node's value, and a **Dropdown (obvpm)** had no static answer, so the wired name came back unknown ("selected by the wire, whose name is only known during the run") and the node's face stayed stale. A Dropdown's own selection is known before any run, so it now answers with its chosen line verbatim (empty selection runs the first option, matching `Dropdown.pick`). The server already applied the wired preset at run time; this makes the UI show what actually runs.
+
 - Fixed: **a workflow with a Bundle or an Unbundle opened as changed** (the unsaved dot, every time, saved or not). ComfyUI notes the state a workflow opens in a moment before these nodes had named their sockets again: a Bundle's first field still read `+` in one of its two name fields, and an Unbundle reading a constant (or one whose bundle was still loading) had its outputs as `out_N (no line N)` until its bundle could be traced. Loaded nodes now keep the names they were saved with until then. And on a canvas that snaps to its grid, a fitted node's size is rounded up to the grid, as saving rounds it, so it no longer shrinks a few pixels on every open.
 
 ## 0.2.18 (2026-10-21)

@@ -521,6 +521,19 @@ export function staticOutput(node, slot, depth = 0) {
     }
     if (PRIMITIVES.test(node.type ?? "")) return widget(node, "value")?.value;
     if (node.type === "PrimitiveNode") return node.widgets?.[0]?.value;
+    if (node.type === "Dropdown (obvpm)") {
+        // a dropdown you define yourself: its own selection is known before any run.
+        // Output 0 ("value") is the chosen line verbatim -- exactly what pick()
+        // returns, so a wire from it into Value Presets' `preset` names that preset.
+        if (slot !== 0) return undefined;
+        const sel = widget(node, "selected")?.value ?? "";
+        if (String(sel).trim()) return String(sel);
+        // empty selection runs the first option (Dropdown.pick): mirror it so a
+        // wired name matches what actually runs.
+        const opts = widget(node, "options")?.value;
+        const lines = (opts ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+        return lines.length ? lines[0] : undefined;
+    }
     if (node.type === "ComfyNotNode") {
         // the core Not: Python's `not value`, for the plain values whose
         // truth JS reads the same way
