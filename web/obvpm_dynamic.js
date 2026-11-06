@@ -315,8 +315,15 @@ export function bundleSourceFor(node, slotName, depth = 0) {
     if (fromBoundary(node.graph, link)) {
         const instance = instanceOf(node.graph);
         const outer = instance?.inputs?.[link.origin_slot];
-        return outer
-            ? bundleSourceFor(instance, outer.name, depth + 1) : null;
+        if (!outer) return null;
+        // Nothing plugged into that socket but it carries a promoted-input
+        // literal: the frontend sends that value as a scalar, so it IS what
+        // arrives. Signal it as a literal (no node/slot to trace).
+        if (outer.link == null) {
+            const w = instance?.widgets?.find((x) => x.name === outer.name);
+            return w && w.value != null ? { literal: w.value } : null;
+        }
+        return bundleSourceFor(instance, outer.name, depth + 1);
     }
     const wrapper = link ? node.graph.getNodeById(link.origin_id) : null;
     // A bundle packed inside a subgraph arrives through the wrapper's
@@ -505,6 +512,7 @@ export function staticInput(node, name, depth = 0) {
         return w ? w.value : undefined;
     }
     const src = bundleSourceFor(node, name);
+    if (src && Object.hasOwn(src, "literal")) return src.literal;
     return src?.node ? staticOutput(src.node, src.slot, depth + 1) : undefined;
 }
 
